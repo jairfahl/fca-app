@@ -9,6 +9,15 @@ export function createQARoutes(): Router {
 
     // QA-only endpoint to get test token
     router.post('/token', (_req: Request, res: Response) => {
+        // Enforce QA_JWT_SECRET presence
+        if (!process.env.QA_JWT_SECRET) {
+            console.error('QA_JWT_SECRET missing in QA mode')
+            return res.status(500).json({
+                error: 'QAConfig',
+                message: 'QA_JWT_SECRET missing'
+            })
+        }
+
         // Generate a JWT token for QA testing
         // This mimics what Supabase would provide
         const payload = {
@@ -21,11 +30,10 @@ export function createQARoutes(): Router {
             iat: Math.floor(Date.now() / 1000)
         }
 
-        // Use a deterministic secret for QA
-        const secret = process.env.QA_JWT_SECRET || 'qa-test-secret-do-not-use-in-production'
+        const secret = process.env.QA_JWT_SECRET
         const token = jwt.sign(payload, secret, { algorithm: 'HS256' })
 
-        res.json({
+        return res.json({
             access_token: token,
             user_id: QA_TEST_USER_ID,
             company_id: QA_TEST_COMPANY_ID,
