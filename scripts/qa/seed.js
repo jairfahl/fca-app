@@ -8,21 +8,27 @@ const TEST_COMPANY_ID = 'c0000000-0000-0000-0000-000000000001';
 const TEST_CYCLE_ID = 'a0000000-0000-0000-0000-000000000001';
 const TEST_SEGMENT_ID = 's0000000-0000-0000-0000-000000000001';
 
-const REQUIRED_TABLES = ['companies', 'segments'];
-
 async function checkSchema(supabase) {
     console.log('Verifying Supabase schema...');
 
-    // We can't easily check information_schema with supabase-js directly unless we use rpc or just try to select.
-    // simpler strategy: Try to LIMIT 1 from each table.
+    const tablesToCheck = ['companies', 'segments'];
 
-    for (const table of REQUIRED_TABLES) {
+    // If --with-cycle is used, we need assessment_cycles table
+    if (process.argv.includes('--with-cycle')) {
+        tablesToCheck.push('assessment_cycles');
+    }
+
+    for (const table of tablesToCheck) {
+        // Try to select 1 row to verify table existence
         const { error } = await supabase.from(table).select('*').limit(1);
+
         if (error) {
             console.error(`FATAL: Missing required table public.${table}`);
-            console.error(`Supabase Error: ${error.message}`);
-            if (error.code === '42P01') { // undefined_table
-                console.error('\nAction Required: Run Supabase migrations / ensure schema is deployed to the Supabase project referenced by .env');
+            if (error.code === '42P01') {
+                // Explicitly log for missing table (Postgres code 42P01)
+                console.error(`(Table public.${table} does not exist)`);
+            } else {
+                console.error(`Supabase Error: ${error.message}`);
             }
             process.exit(1);
         }
@@ -93,12 +99,7 @@ async function seed() {
 
         // Scenario S2: Active cycle exists (optional, controlled by --with-cycle flag)
         if (process.argv.includes('--with-cycle')) {
-            // Check table existence first just to be safe if it's not in REQUIRED_TABLES (it's implicit)
-            const { error: checkCycleTable } = await supabase.from('assessment_cycles').select('*').limit(1);
-            if (checkCycleTable) {
-                console.error('FATAL: Missing table public.assessment_cycles needed for --with-cycle');
-                process.exit(1);
-            }
+            // Table existence for assessment_cycles is checked in checkSchema checks now
 
             const { error: cycleError } = await supabase
                 .from('assessment_cycles')
