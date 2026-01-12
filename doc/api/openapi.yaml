@@ -1,0 +1,111 @@
+openapi: 3.0.0
+info:
+  title: FCA App Backend API
+  version: 1.0.0
+  description: Minimal API documentation for critical endpoints
+servers:
+  - url: http://localhost:3001
+    description: Local Express Backend
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+
+  /api/companies:
+    post:
+      summary: Create or register a company (Stubbed)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                cnpj:
+                  type: string
+                email:
+                  type: string
+      responses:
+        '201':
+          description: Company created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/companies/me:
+    get:
+      summary: Get current company details (Stubbed)
+      responses:
+        '401':
+          description: Unauthorized (if no token)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+        '200':
+          description: Company details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+
+  /api/cycles/active:
+    get:
+      summary: Get active cycle
+      responses:
+        '200':
+          description: Active cycle found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    example: true
+                  cycle:
+                    type: object
+        '404':
+          description: No active cycle
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    example: false

@@ -1,0 +1,41 @@
+name: QA Backend API
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  qa-backend:
+    runs-on: ubuntu-latest
+    
+    env:
+      PORT: 3001
+      QA_MODE: "true"
+      # Mock values for CI to avoid crash if env vars are missing, though real tests might need real DB
+      NEXT_PUBLIC_SUPABASE_URL: "http://localhost:54321" 
+      SUPABASE_SERVICE_ROLE_KEY: "mock-key"
+      
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Bootstrap Backend (QA Mode)
+        run: npm run qa:bootstrap-backend
+        
+      - name: Run API Contract Tests
+        run: npm run qa:api
+        
+      - name: Teardown Backend
+        if: always()
+        run: npm run qa:teardown-backend

@@ -1,0 +1,30 @@
+{
+    "extends": "./tsconfig.json",
+    "ts-node": {
+        "transpileOnly": false,
+        "files": true,
+        "compilerOptions": {
+            "module": "commonjs",
+            "noEmit": false
+        }
+    },
+    "compilerOptions": {
+        "noEmit": false
+    },
+    "include": [
+        "src/adapters/http/**/*.ts",
+        "src/application/**/*.ts",
+        "src/infrastructure/**/*.ts",
+        "src/domain/**/*.ts"
+    ],
+    "exclude": [
+        "**/*.tsx",
+        "src/pages/**",
+        "src/app/**",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+    ],
+    "files": [
+        "src/adapters/http/types/express.d.ts"
+    ]
+}
