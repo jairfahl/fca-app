@@ -30,6 +30,32 @@ export function authMiddleware(
 
     const token = authHeader.substring(7)
 
+    // QA Mode: Try verifying with local secret first
+    if (process.env.QA_MODE === 'true' && process.env.NODE_ENV !== 'production') {
+        try {
+            const secret = process.env.QA_JWT_SECRET || 'qa-test-secret-do-not-use-in-production'
+            const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as jwt.JwtPayload
+            req.userId = decoded.sub
+            return next()
+        } catch (error) {
+            // If failed (e.g. signature mismatch), fall through to Supabase verification
+            // We ignore the error here to allow normal tokens to work
+        }
+    }
+
+    // QA Mode: Try verifying with local secret first
+    if (process.env.QA_MODE === 'true' && process.env.NODE_ENV !== 'production') {
+        try {
+            const secret = process.env.QA_JWT_SECRET || 'qa-test-secret-do-not-use-in-production'
+            const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as jwt.JwtPayload
+            req.userId = decoded.sub
+            return next()
+        } catch (error) {
+            // If failed (e.g. signature mismatch), fall through to Supabase verification
+            // We ignore the error here to allow normal tokens to work
+        }
+    }
+
     jwt.verify(
         token,
         getKey,

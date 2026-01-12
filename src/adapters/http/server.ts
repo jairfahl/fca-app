@@ -42,7 +42,7 @@ export function createServer(): Application {
 
     // QA-only routes - only available when QA_MODE=true and not in production
     if (isQAMode) {
-        app.use('/qa', createQARoutes())
+        app.use('/api/__qa', createQARoutes())
     }
 
     // Mount company routes at /api/companies

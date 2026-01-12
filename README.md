@@ -144,6 +144,7 @@ const { cycleId } = useCycle();
 - Node.js 18+
 - npm ou yarn
 - Conta Supabase configurada
+- `lsof` (para scripts de QA/Teardown)
 
 ### Variáveis de Ambiente
 
@@ -185,11 +186,31 @@ npm run build
 
 # Executar produção
 npm start
+
+# Executar Modo QA (Testes Automatizados)
+npm run qa:bootstrap-backend  # Inicia backend na porta 3001 (background)
+npm run qa:api                # Executa testes de contrato API
+npm run qa:teardown-backend   # Para o backend QA
 ```
 
 **Portas:**
 - Frontend (Next.js): `http://localhost:3000`
 - Backend (Express): `http://localhost:3001`
+
+### Modo QA
+
+O backend suporta um modo especial de QA para testes automatizados.
+
+**Ativação:**
+```env
+QA_MODE=true
+```
+
+**Funcionalidades QA:**
+- Endpoint `POST /api/__qa/token` para gerar tokens de teste
+- Scripts de lifecycle (`qa:bootstrap`, `qa:teardown`)
+- Scripts de dados (`qa:reset`, `qa:seed`)
+- **Nota:** O Modo QA é automaticamente desabilitado se `NODE_ENV=production`.
 
 ## 🔐 Princípios de Segurança
 

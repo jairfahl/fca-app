@@ -8,7 +8,7 @@ export function createQARoutes(): Router {
     const router = Router()
 
     // QA-only endpoint to get test token
-    router.get('/token', (_req: Request, res: Response) => {
+    router.post('/token', (_req: Request, res: Response) => {
         // Generate a JWT token for QA testing
         // This mimics what Supabase would provide
         const payload = {
