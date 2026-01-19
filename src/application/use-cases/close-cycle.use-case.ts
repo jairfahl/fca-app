@@ -21,10 +21,10 @@ export class CloseCycleUseCase {
     ) { }
 
     async execute(input: CloseCycleInput): Promise<CloseCycleOutput> {
-        // Precondition: Check if cycle can be closed
         const canClose = await this.cycleService.canCloseCycle(input.cycleId);
         if (!canClose) {
-            throw new Error('Cannot close cycle: all actions must be completed');
+            const { ConflictError } = require('../../adapters/http/errors');
+            throw new ConflictError('PENDING_ACTIONS', 'Cannot close cycle: all actions must be completed');
         }
 
         // Close cycle using domain service
