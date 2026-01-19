@@ -36,34 +36,16 @@ export function createDashboardRoutes(
     router.get('/',
         authMiddleware,
         requestContextMiddleware(requestContextService),
-        // verifyCycleOwnership(authService), // Removing this because we might handle "No Active Cycle" (200 OK) where we can't verify cycle ownership yet.
-        // Actually, verifyCycleOwnership usually checks params.cycle_id or query.cycle_id. 
-        // If cycle_id is missing, it might skip or fail? 
-        // If cycle_id is provided, we MUST verify ownership.
-        // If cycle_id is NOT provided, we just rely on getActiveCycle, which implies ownership by Company/User context.
-        // Let's implement inline or use a flexible middleware?
-        // To be safe and compliant with "Case 1", if cycle_id is missing, we shouldn't fail ownership check.
-        // Let's rely on the service to handle security via company context (derived from auth token).
         async (req: Request, res: Response, next: NextFunction) => {
             try {
-                // Manually parse query to avoid strict validation error from DTO if it requires cycle_id (it's optional in prompt)
                 const cycle_id = req.query.cycle_id as string | undefined
+                const companyId = (req as any).context.companyId
 
-                // If cycle_id is provided, we SHOULD verify ownership.
                 if (cycle_id) {
-                    // We can manually call authService or trust ReadModelService to filter by company?
-                    // ReadModelService.getDashboardData calls getCycleById.
-                    // DB Client usually doesn't enforce RLS in code but Supabase might.
-                    // However, our `getCycleById` just fetches. 
-                    // We should verify it belongs to the user's company.
-                    const hasAccess = await authService.canAccessCycle(req.user!.company_id, cycle_id)
-                    if (!hasAccess) {
-                        res.status(403).json({ error: 'FORBIDDEN', message: 'Access denied' })
-                        return
-                    }
+                    await authService.verifyCycleOwnership(cycle_id, companyId)
                 }
 
-                const result = await readModelService.getDashboardData(req.user!.company_id, cycle_id)
+                const result = await readModelService.getDashboardData(companyId, cycle_id)
                 res.json(result)
             } catch (error) {
                 next(error)
