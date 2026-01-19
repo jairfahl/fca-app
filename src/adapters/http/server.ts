@@ -60,6 +60,14 @@ export function createServer(): Application {
     const selectActionsUC = new SelectActionsForCycleUseCase(dbClient)
     const completeActionUC = new CompleteActionUseCase(dbClient)
 
+    // Domain Services
+    const { CycleManagementService } = require('../../domain/services/cycle-management.service')
+    const cycleService = new CycleManagementService(dbClient)
+
+    // Use Cases
+    const { CloseCycleUseCase } = require('../../application/use-cases/close-cycle.use-case')
+    const closeCycleUC = new CloseCycleUseCase(cycleService)
+
     app.get('/health', (_req, res) => res.json({ ok: true }))
 
     // QA-only routes - only available when QA_MODE=true and not in production
@@ -105,7 +113,7 @@ export function createServer(): Application {
         authService,
         readModelService,
         null as any,
-        null as any
+        closeCycleUC
     ))
 
     // 404 handler for API routes - must return JSON
