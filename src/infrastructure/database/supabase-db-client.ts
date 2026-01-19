@@ -539,7 +539,8 @@ export class SupabaseDbClient implements DbClient {
             .select(`
                 *,
                 action_catalog:action_catalog_id (
-                    recommendation_id
+                    recommendation_id,
+                    recommendation_text
                 )
             `)
             .eq('assessment_cycle_id', cycleId);
@@ -550,7 +551,8 @@ export class SupabaseDbClient implements DbClient {
 
         return (data || []).map((item: any) => ({
             ...item,
-            recommendation_id: item.action_catalog?.recommendation_id
+            recommendation_id: item.action_catalog?.recommendation_id,
+            recommendation_text: item.action_catalog?.recommendation_text
         })) as SelectedActionRecord[];
     }
 

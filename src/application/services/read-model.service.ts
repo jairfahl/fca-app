@@ -295,4 +295,170 @@ export class ReadModelService {
             }
         }
     }
+    async getDashboardData(companyId: string, cycleId?: string) {
+        let cycle
+        if (cycleId) {
+            cycle = await this.dbClient.getCycleById(cycleId)
+            // If requested cycle explicitly not found, technically we could 404, 
+            // but the prompt says "Cases 1 (No Active) -> 200 Empty" applies when "cycle_id NOT provided AND there is no active cycle".
+            // If cycle_id PROVIDED and not found, Standard 404 is appropriate or we fallback to empty?
+            // "If cycle_id provided, use that cycle..."
+            // We will adhere to standard logic: if specific ID requested and missing -> 404.
+            if (!cycle) {
+                throw new NotFoundError('NOT_FOUND', 'Cycle not found')
+            }
+        } else {
+            cycle = await this.dbClient.getActiveCycle(companyId)
+        }
+
+        // CASE 1: No active cycle (and no specific cycle requested)
+        if (!cycle) {
+            return {
+                cycle_id: null,
+                assessment_status: null,
+                actions: {
+                    active: [],
+                    completed_count: 0,
+                    total_recommendations: 0 // Logic says total reccomendations? Prompt says "total_recommendations". Zero.
+                },
+                next: {
+                    can_open_next_block: false,
+                    reason: "NO_ACTIVE_CYCLE"
+                }
+            }
+        }
+
+        // CASE 2: Diagnostic not completed
+        // Cycle status 'in_progress' implies diagnostic might not be finished OR actions in progress.
+        // But "Diagnostic not completed" specifically refers to the Assessment Phase.
+        // We check if cycle.status == 'completed' ?
+        // Actually, in this domain, 'cycle.status' = 'in_progress' until closed?
+        // Let's check getResultsStatus logic: it throws specific error if cycle.status !== 'completed'.
+        // Wait, "Diagnostic Completed" usually transitions the cycle state or is a separate flag?
+        // Looking at `getDiagnosticStatus`:
+        // status = 'completed' if answered == total.
+        // But the cycle entity itself has a status.
+        // In `getResultsStatus`, we check `if (cycle.status !== 'completed')`.
+        // So we assume `cycle.status` MUST be 'completed' for the dashboard to show the full view.
+        // Prompt says: "user has active cycle but diagnostic not completed — MUST block" -> 409
+
+        // HOWEVER, `cycle.status` == 'completed' usually implies the WHOLE cycle is done? 
+        // Or just the diagnostic phase?
+        // In `CloseCycleUseCase`, it sets status to 'completed'.
+        // But `SubmitDiagnosticUseCase` with `finalize=true` might set something?
+        // Let's look at `getResultsStatus` implementation again (line 217):
+        // `if (cycle.status !== 'completed') { throw Conflict }`
+        // This implies `cycle.status` tracks the diagnostic completion in this context OR the cycle lifecycle.
+        // Checking `SubmitDiagnosticUseCase` (not visible but inferred from previous prompts): 
+        // usually `finalize: true` closes the *assessment* phase.
+        // If `cycle.status` remains `in_progress` during Action Selection, then `getResultsStatus` throwing 409 might be invalid for Action Selection phase?
+        // BUT, let's stick to the prompt's `CASE 2` & `CASE 3`.
+        // "ACTIVE CYCLE + DIAGNOSTIC COMPLETED" -> success
+        // If `cycle.status` is used as the gate, we use it. 
+        // Let's assume `cycle.status` === 'completed' means Diagnostic is done. 
+        // (Wait, if `cycle.status` === 'completed', does it mean ACTIONS are done too? 
+        // Usually "Cycle Closed" = Done. 
+        // Perhaps `cycle.status` 'in_progress' covers both Diagnostic and Actions?
+        // Let's check `getDiagnosticStatus` (line 188): it calculates status based on questions.
+        // It DOES NOT rely on `cycle.status`.
+
+        // Let's rely on `getDiagnosticStatus` logic to determine if assessment is completed.
+        // Re-read `getDiagnosticStatus`:
+        // status = 'completed' if answered == total.
+        // So we should calculate it.
+
+        const segmentId = await this.dbClient.getSegmentByCompany(companyId)
+        if (!segmentId) throw new Error('Segment not found') // Should not happen for valid cycle
+
+        const processIds = await this.dbClient.getProcessIdsBySegment(segmentId)
+        const totalQuestions = await this.dbClient.countQuestionsByProcessIds(processIds)
+        const answeredQuestions = await this.dbClient.countResponsesByCycle(cycle.assessment_cycle_id)
+
+        const isDiagnosticCompleted = totalQuestions > 0 && answeredQuestions === totalQuestions
+
+        // If diagnostic NOT completed:
+        if (!isDiagnosticCompleted) {
+            throw new ConflictError('ASSESSMENT_NOT_COMPLETED', 'Diagnostic must be completed before dashboard access')
+        }
+
+        // CASE 3: Active Cycle + Diagnostic Completed
+
+        const selectedActions = await this.dbClient.getSelectedActionsByCycle(cycle.assessment_cycle_id)
+
+        // actions.active: list of actions (uuid, title, status)
+        const activeActions = selectedActions.map((a: any) => ({
+            action_id: a.selected_action_id,
+            title: a.recommendation_text || 'Ação',
+            status: a.status
+        }))
+
+        // actions.completed_count
+        const completedCount = selectedActions.filter((a: any) => a.status === 'completed' || a.status === 'concluida').length
+
+        // actions.total_recommendations
+        // Is this "Total Recommendations available" or "Total Actions Selected"?
+        // Prompt says "total_recommendations". likely total available in pool? 
+        // Or "Total Recommendations" generated from results?
+        // `getResultsStatus` has `actions_pool`.
+        // Let's assume it means "Total Actions Selected" based on `completed_count` pairing?
+        // OR it means count of RECOMMENDATIONS generated.
+        // Let's look at `actions` structure: { active, completed_count, total_recommendations }
+        // If `active` contains ALL selected actions (including completed?), then `completed_count` is subset.
+        // But `active` usually implies "In Progress" or "Todo"?
+        // "active": [ { status: "nao_iniciada|em_andamento|concluida" } ]
+        // So "active" list contains even concluded ones? Yes, based on the status enum allowed.
+        // So `active` = `selectedActions`.
+
+        // "total_recommendations":
+        // Could be the total number of recommendations generated for the cycle.
+        const recommendations = await this.dbClient.getRecommendationsByCycle(cycle.assessment_cycle_id)
+        const totalRecommendations = recommendations.length
+
+        // Next Block Logic
+        // "can_open_next_block"
+        // Condition: Current block completed?
+        // Block logic from `getActionSuggestions`:
+        // "Active block = exists selected_action with status != 'completed'"
+        // If hasPending -> can_open_next_block = false, reason = "PENDING_ACTIONS"
+        // If no pending -> can_open_next_block = true (if more available?), reason = null
+
+        const hasPending = selectedActions.some((a: any) => a.status !== 'completed' && a.status !== 'concluida')
+
+        // Check if there are more recommendations to select?
+        // If all recommendations selected, can we open next? No.
+        const selectedRecIds = new Set(selectedActions.map((a: any) => a.recommendation_id))
+        const remainingRecs = recommendations.filter((r: any) => !selectedRecIds.has(r.recommendation_id)).length
+
+        let canOpen = false
+        let reason: string | null = null
+
+        if (hasPending) {
+            canOpen = false
+            reason = "PENDING_ACTIONS"
+        } else if (remainingRecs === 0) {
+            canOpen = false
+            reason = "NO_MORE_RECOMMENDATIONS"
+        } else {
+            canOpen = true
+            reason = null
+        }
+
+        return {
+            cycle_id: cycle.assessment_cycle_id,
+            assessment_status: "completed",
+            actions: {
+                active: activeActions.map((a: any) => ({
+                    action_id: a.action_id,
+                    title: a.title || "Ação Selecionada", // Fallback if join missing
+                    status: a.status
+                })),
+                completed_count: completedCount,
+                total_recommendations: totalRecommendations
+            },
+            next: {
+                can_open_next_block: canOpen,
+                reason
+            }
+        }
+    }
 }
