@@ -93,4 +93,17 @@ export class DiagnosticRepository implements IDiagnosticRepository {
 
         return await this.db.getSegmentByCompany(companyId);
     }
+
+    async getResponsesByCycle(cycleId: string): Promise<DiagnosticResponse[]> {
+        const data = await this.db.getDiagnosticResponsesByCycle(cycleId);
+
+        return data.map((r) => ({
+            response_id: r.response_id,
+            assessment_cycle_id: r.assessment_cycle_id,
+            question_id: r.question_id,
+            answer_option_id: r.answer_option_id,
+            responded_at: new Date(r.responded_at),
+            created_at: new Date(r.created_at),
+        }));
+    }
 }

@@ -22,6 +22,21 @@ export function createDashboardRoutes(
 ): Router {
     const router = Router()
 
+    // STUB: REQUIRED FOR INVENTORY
+    router.get('/', (_req, res) => {
+        res.status(501).json({ error: 'NotImplemented', message: 'Dashboard stub' })
+    })
+
+    // STUB: REQUIRED FOR INVENTORY
+    router.get('/status', (_req, res) => {
+        res.status(501).json({ error: 'NotImplemented', message: 'Dashboard status stub' })
+    })
+
+    // STUB: REQUIRED FOR INVENTORY
+    router.post('/cycles/close', (_req, res) => {
+        res.status(501).json({ error: 'NotImplemented', message: 'Dashboard cycle close stub' })
+    })
+
     router.get('/',
         authMiddleware,
         requestContextMiddleware(requestContextService),

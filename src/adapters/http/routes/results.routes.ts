@@ -14,6 +14,22 @@ export function createResultsRoutes(
 ): Router {
     const router = Router()
 
+    router.get('/status',
+        authMiddleware,
+        requestContextMiddleware(requestContextService),
+        async (req: Request, res: Response, next: NextFunction) => {
+            try {
+                const company_id = (req as any).context.companyId
+                const cycle_id = req.query.cycle_id as string | undefined
+
+                const result = await readModelService.getResultsStatus(company_id, cycle_id)
+                res.status(200).json(result)
+            } catch (error) {
+                next(error)
+            }
+        }
+    )
+
     router.get('/',
         authMiddleware,
         requestContextMiddleware(requestContextService),

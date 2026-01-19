@@ -8,6 +8,7 @@ export function errorHandlerMiddleware(
     res: Response,
     _next: NextFunction
 ): void {
+    console.error('SERVER ERROR:', err)
     const requestId = (req as any).requestId
 
     let status = 500
@@ -27,6 +28,11 @@ export function errorHandlerMiddleware(
         source = 'APPLICATION'
     } else if (err.name === 'NotFoundError') {
         status = 404
+        errorCode = err.code
+        message = err.message
+        source = 'APPLICATION'
+    } else if (err.name === 'ConflictError') {
+        status = 409
         errorCode = err.code
         message = err.message
         source = 'APPLICATION'

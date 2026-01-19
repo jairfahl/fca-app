@@ -6,7 +6,18 @@ import { loggerMiddleware } from './middlewares/logger.middleware'
 import { errorHandlerMiddleware } from './middlewares/error-handler.middleware'
 import { createCompanyRoutes } from './routes/company.routes'
 import { createCycleRoutes } from './routes/cycle.routes'
+import { createDiagnosticRoutes } from './routes/diagnostic.routes'
+import { createResultsRoutes } from './routes/results.routes'
+import { createActionsRoutes } from './routes/actions.routes'
+import { createDashboardRoutes } from './routes/dashboard.routes'
 import { createQARoutes } from './routes/qa.routes'
+import { SubmitDiagnosticUseCase } from '../../application/use-cases/submit-diagnostic.use-case'
+import { SelectActionsForCycleUseCase } from '../../application/use-cases/select-actions-for-cycle.use-case'
+import { CompleteActionUseCase } from '../../application/use-cases/complete-action.use-case'
+import { SupabaseDbClient } from '../../infrastructure/database/supabase-db-client'
+import { RequestContextService } from '../../application/services/request-context.service'
+import { ReadModelService } from '../../application/services/read-model.service'
+import { AuthorizationService } from '../../application/services/authorization.service'
 
 export function createServer(): Application {
     const app = express()
@@ -38,6 +49,17 @@ export function createServer(): Application {
     app.use(requestIdMiddleware)
     app.use(loggerMiddleware)
 
+    // Services
+    const dbClient = new SupabaseDbClient()
+
+    // Core Services
+    const requestContextService = new RequestContextService(dbClient)
+    const readModelService = new ReadModelService(dbClient)
+    const authService = new AuthorizationService(dbClient)
+    const submitDiagnosticUC = new SubmitDiagnosticUseCase(dbClient, readModelService)
+    const selectActionsUC = new SelectActionsForCycleUseCase(dbClient)
+    const completeActionUC = new CompleteActionUseCase(dbClient)
+
     app.get('/health', (_req, res) => res.json({ ok: true }))
 
     // QA-only routes - only available when QA_MODE=true and not in production
@@ -46,11 +68,45 @@ export function createServer(): Application {
     }
 
     // Mount company routes at /api/companies
-    // Pass null for services as they're not used by POST endpoint
     app.use('/api/companies', createCompanyRoutes(null as any, null as any))
 
     // Mount cycle routes at /api/cycles
-    app.use('/api/cycles', createCycleRoutes(null as any, null as any))
+    app.use('/api/cycles', createCycleRoutes(requestContextService, null as any))
+
+    // Mount diagnostic routes
+    app.use('/api/diagnostic', createDiagnosticRoutes(
+        requestContextService,
+        authService,
+        readModelService,
+        submitDiagnosticUC,
+        null as any
+    ))
+
+    // Mount results routes
+    app.use('/api/results', createResultsRoutes(
+        requestContextService,
+        authService,
+        readModelService
+    ))
+
+    // Mount actions routes
+    // Mount actions routes
+    app.use('/api/actions', createActionsRoutes(
+        requestContextService,
+        authService,
+        readModelService,
+        selectActionsUC,
+        completeActionUC
+    ))
+
+    // Mount dashboard routes
+    app.use('/api/dashboard', createDashboardRoutes(
+        requestContextService,
+        authService,
+        readModelService,
+        null as any,
+        null as any
+    ))
 
     // 404 handler for API routes - must return JSON
     app.use((req, res, next): void => {

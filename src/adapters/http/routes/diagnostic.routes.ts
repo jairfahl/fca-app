@@ -12,13 +12,61 @@ import { AuthorizationService } from '../../../application/services/authorizatio
 import { ReadModelService } from '../../../application/services/read-model.service'
 import { FinishDiagnosticUseCase } from '../../../application/use-cases/finish-diagnostic.use-case'
 
+import { SubmitDiagnosticUseCase } from '../../../application/use-cases/submit-diagnostic.use-case'
+import { SubmitDiagnosticRequest } from '../dtos/diagnostic.dto'
+
 export function createDiagnosticRoutes(
     requestContextService: RequestContextService,
     authService: AuthorizationService,
     readModelService: ReadModelService,
+    submitDiagnosticUC: SubmitDiagnosticUseCase,
     finishDiagnosticUC: FinishDiagnosticUseCase
 ): Router {
     const router = Router()
+
+    router.get('/status',
+        authMiddleware,
+        requestContextMiddleware(requestContextService),
+        async (req: Request, res: Response, next: NextFunction) => {
+            try {
+                // Manually parse optional query param since we don't have a specific DTO yet
+                // and GetQuestionsRequest might enforce cycle_id
+                const cycle_id = req.query.cycle_id as string | undefined
+                const company_id = (req as any).context.companyId
+
+                const result = await readModelService.getDiagnosticStatus(company_id, cycle_id)
+                res.json(result)
+            } catch (error) {
+                next(error)
+            }
+        }
+    )
+
+    router.post('/submit',
+        authMiddleware,
+        requestContextMiddleware(requestContextService),
+        async (req: Request, res: Response, next: NextFunction) => {
+            try {
+                const body = SubmitDiagnosticRequest.parse(req.body)
+                const company_id = (req as any).context.companyId
+
+                const result = await submitDiagnosticUC.execute({
+                    cycleId: body.cycle_id,
+                    companyId: company_id,
+                    answers: body.answers,
+                    finalize: body.finalize
+                })
+
+                if (result.assessment.status === 'completed') {
+                    res.status(201).json(result)
+                } else {
+                    res.status(200).json(result)
+                }
+            } catch (error) {
+                next(error)
+            }
+        }
+    )
 
     router.get('/questions',
         authMiddleware,

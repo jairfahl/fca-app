@@ -6,17 +6,17 @@ export function requestContextMiddleware(
 ) {
     return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
         try {
-            const userId = req.userId
+            const userId = (req as any).userId
             if (!userId) {
                 throw new Error('User ID not found in request')
             }
 
             const companyId = await requestContextService.getCompanyForUser(userId)
 
-            req.context = {
-                userId,
-                companyId
-            }
+                ; (req as any).context = {
+                    userId,
+                    companyId
+                }
 
             next()
         } catch (error) {

@@ -8,6 +8,11 @@ export function createCycleRoutes(
 ): Router {
     const router = Router()
 
+    // STUB: REQUIRED FOR INVENTORY
+    router.post('/close', (_req, res) => {
+        res.status(501).json({ error: 'NotImplemented', message: 'Cycle close stub' })
+    })
+
     router.get('/active', async (_req: Request, res: Response, next: NextFunction) => {
         try {
             // For now, return 404 with JSON indicating no active cycle

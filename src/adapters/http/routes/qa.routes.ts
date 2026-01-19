@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express'
 import jwt from 'jsonwebtoken'
 
-const QA_TEST_USER_ID = '00000000-0000-0000-0000-000000000qa1'
+const QA_TEST_USER_ID = '8b91407a-1e0b-47df-a92c-9ecd6c6893be'
 const QA_TEST_COMPANY_ID = 'c0000000-0000-0000-0000-000000000001'
 
 export function createQARoutes(): Router {
@@ -9,6 +9,15 @@ export function createQARoutes(): Router {
 
     // QA-only endpoint to get test token
     router.post('/token', (_req: Request, res: Response) => {
+        // Enforce gate: QA_MODE=true AND NODE_ENV!=production
+        // Guard against accidental exposure in production
+        if (process.env.NODE_ENV === 'production' || process.env.QA_MODE !== 'true') {
+            return res.status(404).json({
+                error: 'NotFound',
+                message: 'Not available'
+            })
+        }
+
         // Enforce QA_JWT_SECRET presence
         if (!process.env.QA_JWT_SECRET) {
             console.error('QA_JWT_SECRET missing in QA mode')

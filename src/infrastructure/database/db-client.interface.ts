@@ -39,6 +39,14 @@ export interface ProcessRecord {
     created_at: string;
 }
 
+export interface AreaRecord {
+    area_id: string;
+    name: string;
+    description: string;
+    display_order: number;
+    created_at: string;
+}
+
 export interface QuestionRecord {
     question_id: string;
     process_id: string;
@@ -129,7 +137,8 @@ export interface DbClient {
     getCycleById(cycleId: string): Promise<CycleRecord | null>;
     updateCycle(cycleId: string, data: UpdateCycleData): Promise<CycleRecord>;
     getActionStatuses(cycleId: string): Promise<ActionStatusRecord[]>;
-    updateActionStatus(actionId: string, status: string, completedAt?: string): Promise<void>;
+    getActionStatuses(cycleId: string): Promise<ActionStatusRecord[]>;
+    updateActionStatus(actionId: string, status: string, completedAt?: string, evidenceText?: string | null): Promise<void>;
 
     // Diagnostic operations
     getProcessesBySegment(segmentId: SegmentId): Promise<ProcessRecord[]>;
@@ -138,8 +147,11 @@ export interface DbClient {
     createDiagnosticResponse(data: CreateDiagnosticResponseData): Promise<DiagnosticResponseRecord>;
     getCompanyIdByCycle(cycleId: string): Promise<string | null>;
     getSegmentByCompany(companyId: string): Promise<SegmentId | null>;
+    getAreas(): Promise<AreaRecord[]>;
     countQuestionsByProcessIds(processIds: string[]): Promise<number>;
     countResponsesByCycle(cycleId: string): Promise<number>;
+    getDiagnosticResponsesByCycle(cycleId: string): Promise<DiagnosticResponseRecord[]>;
+    saveDiagnosticResponses(responses: CreateDiagnosticResponseData[]): Promise<void>;
 
     // Scoring operations
     getQuestionIdsByProcess(processId: string): Promise<string[]>;
@@ -156,4 +168,34 @@ export interface DbClient {
     getActionsByRecommendation(recommendationId: string): Promise<ActionRecord[]>;
     getActionById(actionId: string): Promise<ActionRecord | null>;
     getActionsBySegment(segmentId: SegmentId): Promise<ActionRecord[]>;
+    getActionCatalogIdByRecommendation(recommendationId: string): Promise<string | null>;
+
+    // Selected actions operations
+    getSelectedActionsByCycle(cycleId: string): Promise<SelectedActionRecord[]>;
+    getSelectedActionById(selectedActionId: string): Promise<SelectedActionRecord | null>;
+    createSelectedAction(data: CreateSelectedActionData): Promise<SelectedActionRecord>;
+
+    // Missing/needed for ReadModel/UseCase
+    getRecommendationsByCycle(cycleId: string): Promise<RecommendationRecord[]>;
+    getScoresByCycle(cycleId: string): Promise<ProcessScoreRecord[]>;
+}
+
+export interface SelectedActionRecord {
+    selected_action_id: string;
+    assessment_cycle_id: string;
+    user_id: string;
+    action_catalog_id: string;
+    status: string;
+    created_at: string;
+    completed_at: string | null;
+    evidence_text?: string | null;
+    recommendation_id?: string; // Optional (joined)
+}
+
+export interface CreateSelectedActionData {
+    assessment_cycle_id: string;
+    user_id: string;
+    action_catalog_id: string;
+    status: string;
+    created_at: string;
 }

@@ -509,3 +509,41 @@ Qualquer PR deve aderir a esses princípios.
 ## 👥 Autores
 
 [Definir autores/equipe]
+
+## 🤖 Módulo IAGO (Inteligência Artificial)
+
+O **IAGO** (Inteligência Artificial de Apoio à Governança e Operação) é um módulo cognitivo auxiliar integrado ao fluxo de diagnóstico e acompanhamento. Ele opera de forma estritamente analítica, sem autoridade de decisão.
+
+### Responsabilidades Cognitivas
+
+O IAGO possui 5 responsabilidades auditadas ("Prompts") implementadas no backend:
+
+#### 1. Interpretação de Contradições (`IAGO_INTERPRETACAO_CONTRADICOES`)
+- **Função:** Cruza respostas do diagnóstico com evidências textuais para identificar inconsistências lógicas.
+- **Saída:** Lista de contradições classificadas por dimensão (Processo, Governança, etc.).
+
+#### 2. Formulação de Hipóteses (`IAGO_FORMULACAO_HIPOTESES`)
+- **Função:** Converte sintomas relatados pelo gestor em hipóteses estruturais de causa raiz.
+- **Saída:** Hipóteses sistêmicas e impessoais.
+
+#### 3. Reenquadramento Estrutural (`IAGO_REENQUADRAMENTO_ESTRUTURAL`)
+- **Função:** Traduz relatos emocionais ou subjetivos para linguagem técnica e estrutural.
+- **Saída:** Texto reenquadrado e tabela de correspondência (De → Para).
+
+#### 4. Geração de Artefatos Preliminares (`IAGO_GERACAO_ARTEFATOS_PRELIMINARES`)
+- **Função:** Gera rascunhos de artefatos (processos, KPIs, rituais) baseados nas hipóteses validadas.
+- **Saída:** Conteúdo preliminar marcado com aviso de não-operacionalidade.
+
+#### 5. Pressão Cognitiva (`IAGO_PRESSAO_COGNITIVA_DISCIPLINADA`)
+- **Função:** Questiona tecnicamente evidências e status de ações para testar robustez estrutural.
+- **Saída:** Perguntas socráticas focadas em mecanismo e critério.
+
+### Travas de Segurança (Hard Constraints)
+
+A implementação do IAGO segue regras rígidas de **não-autoridade**:
+- **Não decide:** Nunca altera status ou dados sem intervenção humana.
+- **Não julga:** Não emite opinião sobre pessoas ou intenções.
+- **Não desenha solução final:** Todos os artefatos são "preliminares" ou "rascunhos".
+- **Não valida:** Não aprova ou reprova ações; apenas questiona consistência.
+
+A lógica reside em `src/domain/services/iago.service.ts` e é acessível via Use Cases na camada de Aplicação.

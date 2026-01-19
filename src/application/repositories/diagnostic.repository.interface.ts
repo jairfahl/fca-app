@@ -32,4 +32,9 @@ export interface IDiagnosticRepository {
      * Get company's segment ID by cycle
      */
     getSegmentByCycle(cycleId: string): Promise<SegmentId | null>;
+
+    /**
+     * Get all responses for a cycle
+     */
+    getResponsesByCycle(cycleId: string): Promise<DiagnosticResponse[]>;
 }

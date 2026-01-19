@@ -4,6 +4,15 @@ export const GetQuestionsRequest = z.object({
     cycle_id: z.string().uuid()
 })
 
+export const SubmitDiagnosticRequest = z.object({
+    cycle_id: z.string().uuid(),
+    answers: z.array(z.object({
+        question_id: z.string().uuid(),
+        value: z.union([z.string(), z.number(), z.boolean()])
+    })),
+    finalize: z.boolean().optional().default(false)
+})
+
 export const SubmitAnswerRequest = z.object({
     cycle_id: z.string().uuid(),
     question_id: z.string().uuid(),

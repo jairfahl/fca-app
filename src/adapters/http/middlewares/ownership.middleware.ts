@@ -13,7 +13,7 @@ export function verifyCycleOwnership(
                 throw new ValidationError('MISSING_CYCLE_ID', 'cycle_id required')
             }
 
-            const companyId = req.context.companyId
+            const companyId = (req as any).context.companyId
             await authService.verifyCycleOwnership(cycleId, companyId)
 
             next()
@@ -34,7 +34,7 @@ export function verifyActionOwnership(
                 throw new ValidationError('MISSING_ACTION_ID', 'selected_action_id required')
             }
 
-            const companyId = req.context.companyId
+            const companyId = (req as any).context.companyId
             await authService.verifyActionOwnership(actionId, companyId)
 
             next()
