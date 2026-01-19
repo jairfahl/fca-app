@@ -3,7 +3,6 @@ import { authMiddleware } from '../middlewares/auth.middleware'
 import { requestContextMiddleware } from '../middlewares/request-context.middleware'
 import { verifyCycleOwnership, verifyActionOwnership } from '../middlewares/ownership.middleware'
 import {
-    GetDashboardRequest,
     SubmitEvidenceRequest,
     CloseCycleRequest
 } from '../dtos/dashboard.dto'
