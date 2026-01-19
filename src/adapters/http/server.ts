@@ -79,7 +79,7 @@ export function createServer(): Application {
     app.use('/api/companies', createCompanyRoutes(null as any, null as any))
 
     // Mount cycle routes at /api/cycles
-    app.use('/api/cycles', createCycleRoutes(requestContextService, null as any))
+    app.use('/api/cycles', createCycleRoutes(requestContextService, authService, null as any, closeCycleUC))
 
     // Mount diagnostic routes
     app.use('/api/diagnostic', createDiagnosticRoutes(

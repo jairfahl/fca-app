@@ -1,17 +1,38 @@
 import { Router, Request, Response, NextFunction } from 'express'
+import { authMiddleware } from '../middlewares/auth.middleware'
+import { requestContextMiddleware } from '../middlewares/request-context.middleware'
+import { verifyCycleOwnership } from '../middlewares/ownership.middleware'
+import { CloseCycleRequest } from '../dtos/dashboard.dto'
 import { RequestContextService } from '../../../application/services/request-context.service'
+import { AuthorizationService } from '../../../application/services/authorization.service'
 import { StartAssessmentCycleUseCase } from '../../../application/use-cases/start-assessment-cycle.use-case'
+import { CloseCycleUseCase } from '../../../application/use-cases/close-cycle.use-case'
 
 export function createCycleRoutes(
-    _requestContextService: RequestContextService,
-    _startAssessmentCycleUC: StartAssessmentCycleUseCase
+    requestContextService: RequestContextService,
+    authService: AuthorizationService,
+    _startAssessmentCycleUC: StartAssessmentCycleUseCase,
+    closeCycleUC: CloseCycleUseCase
 ): Router {
     const router = Router()
 
-    // STUB: REQUIRED FOR INVENTORY
-    router.post('/close', (_req, res) => {
-        res.status(501).json({ error: 'NotImplemented', message: 'Cycle close stub' })
-    })
+    router.post('/close',
+        authMiddleware,
+        requestContextMiddleware(requestContextService),
+        verifyCycleOwnership(authService),
+        async (req: Request, res: Response, next: NextFunction) => {
+            try {
+                const body = CloseCycleRequest.parse(req.body)
+                const result = await closeCycleUC.execute({ cycleId: body.cycle_id })
+                res.json({
+                    cycle_id: result.cycle.assessment_cycle_id,
+                    status: 'closed'
+                })
+            } catch (error) {
+                next(error)
+            }
+        }
+    )
 
     router.get('/active', async (_req: Request, res: Response, next: NextFunction) => {
         try {
