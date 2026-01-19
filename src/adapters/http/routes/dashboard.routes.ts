@@ -85,8 +85,11 @@ export function createDashboardRoutes(
         async (req: Request, res: Response, next: NextFunction) => {
             try {
                 const body = CloseCycleRequest.parse(req.body)
-                await closeCycleUC.execute({ cycleId: body.cycle_id })
-                res.json({ ok: true })
+                const result = await closeCycleUC.execute({ cycleId: body.cycle_id })
+                res.json({
+                    cycle_id: result.cycle.assessment_cycle_id,
+                    status: 'closed'
+                })
             } catch (error) {
                 next(error)
             }

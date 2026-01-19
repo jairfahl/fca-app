@@ -122,7 +122,7 @@ export class CycleManagementService {
             totalActions,
             completedActions,
             pendingActions,
-            canCloseCycle: completedActions >= 3,
+            canCloseCycle: totalActions > 0 && pendingActions === 0,
         };
     }
 
