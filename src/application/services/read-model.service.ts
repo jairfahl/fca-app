@@ -527,22 +527,14 @@ export class ReadModelService {
             }
         }
 
-        // Refine cycle_closed if needed
-        // If !has_active_cycle, we check if we can query strictly.
-        // Since we MUST NOT refactor, and we don't have `getLatestCycle`:
-        // We will do a robust check via `SupabaseDbClient` if we can access the private `supabase`? No.
-        // We will try to add a small helper in DbClient if necessary, OR strict to what is available.
-        // Wait, "NO REFACTOR" might mean "Don't change existing function signatures or flows". 
-        // Adding a method to DbClient to support the feature IS part of implementation?
-        // Let's verify `SupabaseDbClient` content first.
-
         return {
             has_company,
             has_active_cycle,
             assessment_completed,
             has_active_block,
             can_select_next_block,
-            cycle_closed: false // Placeholder until we verify DB access
+            cycle_closed
         }
     }
+}
 }
