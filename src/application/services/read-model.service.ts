@@ -388,7 +388,7 @@ export class ReadModelService {
         // actions.active: list of actions (uuid, title, status)
         const activeActions = selectedActions.map((a: any) => ({
             action_id: a.selected_action_id,
-            title: a.recommendation_text || 'Ação',
+            title: a.action_title || 'Ação',
             status: a.status
         }))
 
