@@ -25,10 +25,10 @@ export function createDashboardRoutes(
 
 
 
-    // STUB: REQUIRED FOR INVENTORY
-    router.post('/cycles/close', (_req, res) => {
-        res.status(501).json({ error: 'NotImplemented', message: 'Dashboard cycle close stub' })
-    })
+
+
+
+
 
     router.get('/',
         authMiddleware,
