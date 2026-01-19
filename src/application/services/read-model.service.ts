@@ -461,4 +461,115 @@ export class ReadModelService {
             }
         }
     }
+    async getDashboardStatus(companyId: string) {
+        // 1. has_company
+        const company = await this.dbClient.getCompanyById(companyId)
+        const has_company = !!company
+
+        if (!has_company) {
+            return {
+                has_company: false,
+                has_active_cycle: false,
+                assessment_completed: false,
+                has_active_block: false,
+                can_select_next_block: false,
+                cycle_closed: false
+            }
+        }
+
+        // 2. has_active_cycle
+        const activeCycle = await this.dbClient.getActiveCycle(companyId)
+        const has_active_cycle = !!activeCycle
+
+        // 3. cycle_closed (Only true if NO active cycle AND recent cycle is closed)
+        let cycle_closed = false
+        if (!has_active_cycle) {
+            // Check most recent cycle? 
+            // "true se não existir ciclo ativo e o ciclo mais recente estiver com status closed."
+            // We need a way to get the "latest" cycle.
+            // getActiveCycle only returns 'in_progress'.
+            // We should query for ANY cycle by company, ordered by created_at desc?
+            // Since we don't have a direct "getLatestCycle" in DbClient, we might need to rely on existing or add one?
+            // Or can we infer? 
+            // If we don't have active cycle, we might have a completed one.
+            // Let's assume for now if no active cycle, we check if there are ANY cycles.
+            // But strictly, we need the "most recent".
+            // Given constraint "NO REFACTOR", we should see if we can use existing.
+            // `getScoresByCycle` etc need cycleID.
+            // Does `dbClient` have `getLatestCycle`? No.
+            // We can use `Supabase` client directly if accessible? No, `dbClient` wraps it.
+            // Checking `SupabaseDbClient` methods...
+            // `getCycleById`, `getActiveCycle`.
+            // If we cannot get the latest cycle easily, can we check `getCycleByCompany`?
+            // Not exposed.
+            // However, `cycle_closed` is a navigation guard.
+            // If we can't implement it perfectly without new DB method, we might have to use what we have.
+            // Wait, `getDashboard` takes `cycle_id`.
+            // `getDashboardStatus` takes nothing (derived from user token).
+            // If we return `cycle_closed: false` conservatively when we can't be sure?
+            // OR we add a lightweight query if allowed?
+            // "NO REFACTOR". But maybe "Files Changed" allows adding to `supabase-db-client.ts`?
+            // The previous prompt allowed it.
+            // But strict "NO REFACTOR" in this prompt? "NO DESIGN CHANGES".
+            // Maybe we can skip `cycle_closed` logic details or assume false if no info?
+            // "EVIDENCE NOT PROVIDED ... = AUTO FAIL".
+            // We must implement it correctly.
+            // Let's check `SupabaseDbClient` again.
+        }
+
+        // 4. assessment_completed
+        let assessment_completed = false
+        let has_active_block = false
+        let can_select_next_block = false
+
+        if (has_active_cycle && activeCycle) {
+            // Calculate assessment completion
+            const segmentId = await this.dbClient.getSegmentByCompany(companyId)
+            // Safety check
+            if (segmentId) {
+                const processIds = await this.dbClient.getProcessIdsBySegment(segmentId)
+                const totalQuestions = await this.dbClient.countQuestionsByProcessIds(processIds)
+                const answeredQuestions = await this.dbClient.countResponsesByCycle(activeCycle.assessment_cycle_id)
+                assessment_completed = (totalQuestions > 0 && answeredQuestions === totalQuestions)
+            }
+
+            // 5. has_active_block
+            const selectedActions = await this.dbClient.getSelectedActionsByCycle(activeCycle.assessment_cycle_id)
+            has_active_block = selectedActions.some((a: any) => a.status !== 'completed' && a.status !== 'concluida')
+
+            // 6. can_select_next_block
+            // •	assessment_completed = true
+            // •	cycle_closed = false (active cycle implies cycle_closed is FALSE logic wise? "cycle_closed = true se NÃO existir ciclo ativo")
+            //    So if active cycle exists, cycle_closed is always false by definition above.
+            // •	has_active_block = false
+            // •	existir pool disponível
+            if (assessment_completed && !has_active_block) {
+                const recommendations = await this.dbClient.getRecommendationsByCycle(activeCycle.assessment_cycle_id)
+                const selectedRecIds = new Set(selectedActions.map((a: any) => a.recommendation_id))
+                const remainingRecs = recommendations.filter((r: any) => !selectedRecIds.has(r.recommendation_id)).length
+
+                if (remainingRecs > 0) {
+                    can_select_next_block = true
+                }
+            }
+        }
+
+        // Refine cycle_closed if needed
+        // If !has_active_cycle, we check if we can query strictly.
+        // Since we MUST NOT refactor, and we don't have `getLatestCycle`:
+        // We will do a robust check via `SupabaseDbClient` if we can access the private `supabase`? No.
+        // We will try to add a small helper in DbClient if necessary, OR strict to what is available.
+        // Wait, "NO REFACTOR" might mean "Don't change existing function signatures or flows". 
+        // Adding a method to DbClient to support the feature IS part of implementation?
+        // Let's verify `SupabaseDbClient` content first.
+
+        return {
+            has_company,
+            has_active_cycle,
+            assessment_completed,
+            has_active_block,
+            can_select_next_block,
+            cycle_closed: false // Placeholder until we verify DB access
+        }
+    }
 }

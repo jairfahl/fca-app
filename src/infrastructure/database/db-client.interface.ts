@@ -134,6 +134,7 @@ export interface DbClient {
     // Cycle operations
     createCycle(data: CreateCycleData): Promise<CycleRecord>;
     getActiveCycle(companyId: string): Promise<CycleRecord | null>;
+    getMostRecentCycle(companyId: string): Promise<CycleRecord | null>;
     getCycleById(cycleId: string): Promise<CycleRecord | null>;
     updateCycle(cycleId: string, data: UpdateCycleData): Promise<CycleRecord>;
     getActionStatuses(cycleId: string): Promise<ActionStatusRecord[]>;

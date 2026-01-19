@@ -23,10 +23,7 @@ export function createDashboardRoutes(
 
 
 
-    // STUB: REQUIRED FOR INVENTORY
-    router.get('/status', (_req, res) => {
-        res.status(501).json({ error: 'NotImplemented', message: 'Dashboard status stub' })
-    })
+
 
     // STUB: REQUIRED FOR INVENTORY
     router.post('/cycles/close', (_req, res) => {
@@ -46,6 +43,20 @@ export function createDashboardRoutes(
                 }
 
                 const result = await readModelService.getDashboardData(companyId, cycle_id)
+                res.json(result)
+            } catch (error) {
+                next(error)
+            }
+        }
+    )
+
+    router.get('/status',
+        authMiddleware,
+        requestContextMiddleware(requestContextService),
+        async (req: Request, res: Response, next: NextFunction) => {
+            try {
+                const companyId = (req as any).context.companyId
+                const result = await readModelService.getDashboardStatus(companyId)
                 res.json(result)
             } catch (error) {
                 next(error)

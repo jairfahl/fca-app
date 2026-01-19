@@ -100,6 +100,22 @@ export class SupabaseDbClient implements DbClient {
         return data;
     }
 
+    async getMostRecentCycle(companyId: string): Promise<CycleRecord | null> {
+        const { data, error } = await this.supabase
+            .from('assessment_cycle')
+            .select('*')
+            .eq('company_id', companyId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (error) {
+            throw new Error(`Failed to get most recent cycle: ${error.message}`);
+        }
+
+        return data;
+    }
+
     async getActionStatuses(cycleId: string): Promise<ActionStatusRecord[]> {
         const { data, error } = await this.supabase
             .from('selected_action')
