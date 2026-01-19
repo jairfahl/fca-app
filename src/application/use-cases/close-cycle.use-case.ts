@@ -24,7 +24,7 @@ export class CloseCycleUseCase {
         // Precondition: Check if cycle can be closed
         const canClose = await this.cycleService.canCloseCycle(input.cycleId);
         if (!canClose) {
-            throw new Error('Cannot close cycle: insufficient completed actions (need 3+)');
+            throw new Error('Cannot close cycle: all actions must be completed');
         }
 
         // Close cycle using domain service
