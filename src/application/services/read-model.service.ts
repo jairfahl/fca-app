@@ -484,37 +484,10 @@ export class ReadModelService {
         // 3. cycle_closed (Only true if NO active cycle AND recent cycle is closed)
         let cycle_closed = false
         if (!has_active_cycle) {
-            // Check most recent cycle? 
-            // "true se não existir ciclo ativo e o ciclo mais recente estiver com status closed."
-            // We need a way to get the "latest" cycle.
-            // getActiveCycle only returns 'in_progress'.
-            // We should query for ANY cycle by company, ordered by created_at desc?
-            // Since we don't have a direct "getLatestCycle" in DbClient, we might need to rely on existing or add one?
-            // Or can we infer? 
-            // If we don't have active cycle, we might have a completed one.
-            // Let's assume for now if no active cycle, we check if there are ANY cycles.
-            // But strictly, we need the "most recent".
-            // Given constraint "NO REFACTOR", we should see if we can use existing.
-            // `getScoresByCycle` etc need cycleID.
-            // Does `dbClient` have `getLatestCycle`? No.
-            // We can use `Supabase` client directly if accessible? No, `dbClient` wraps it.
-            // Checking `SupabaseDbClient` methods...
-            // `getCycleById`, `getActiveCycle`.
-            // If we cannot get the latest cycle easily, can we check `getCycleByCompany`?
-            // Not exposed.
-            // However, `cycle_closed` is a navigation guard.
-            // If we can't implement it perfectly without new DB method, we might have to use what we have.
-            // Wait, `getDashboard` takes `cycle_id`.
-            // `getDashboardStatus` takes nothing (derived from user token).
-            // If we return `cycle_closed: false` conservatively when we can't be sure?
-            // OR we add a lightweight query if allowed?
-            // "NO REFACTOR". But maybe "Files Changed" allows adding to `supabase-db-client.ts`?
-            // The previous prompt allowed it.
-            // But strict "NO REFACTOR" in this prompt? "NO DESIGN CHANGES".
-            // Maybe we can skip `cycle_closed` logic details or assume false if no info?
-            // "EVIDENCE NOT PROVIDED ... = AUTO FAIL".
-            // We must implement it correctly.
-            // Let's check `SupabaseDbClient` again.
+            const recentCycle = await this.dbClient.getMostRecentCycle(companyId)
+            if (recentCycle && recentCycle.status === 'completed') {
+                cycle_closed = true
+            }
         }
 
         // 4. assessment_completed
