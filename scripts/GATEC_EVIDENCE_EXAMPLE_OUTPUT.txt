@@ -1,0 +1,72 @@
+=== GATE C: Test Determinism ===
+
+Company ID: 136ced85-0c92-4127-b42e-568a18864b01
+Assessment ID: abc12345-def6-7890-abcd-ef1234567890
+API URL: http://localhost:3001
+
+1. GET /full/assessments/:id/summary (call 1)...
+✓ Status 200
+   BODY_HASH_1: 3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+
+2. GET /full/assessments/:id/summary (call 2)...
+✓ Status 200
+   BODY_HASH_2: 3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+
+✓ SUMMARY: Determinism PASS (hashes iguais)
+
+3. GET /full/assessments/:id/next-best-actions (call 1)...
+✓ Status 200
+   BODY_HASH_NBA_1: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+
+4. GET /full/assessments/:id/next-best-actions (call 2)...
+✓ Status 200
+   BODY_HASH_NBA_2: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+
+✓ NEXT-BEST-ACTIONS: Determinism PASS (hashes iguais)
+
+=== Determinism Test PASSED ===
+
+Summary:
+  SUMMARY endpoint: BODY_HASH_1=3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1, BODY_HASH_2=3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+  NEXT-BEST-ACTIONS endpoint: BODY_HASH_NBA_1=7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8, BODY_HASH_NBA_2=7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+
+---
+
+=== GATE C: Test Entitlement ===
+
+Company ID: 136ced85-0c92-4127-b42e-568a18864b01
+Assessment ID: abc12345-def6-7890-abcd-ef1234567890
+API URL: http://localhost:3001
+
+1. GET /full/assessments/:id/summary (FULL entitlement)...
+   Status: 200
+✓ FULL entitlement: Status 200 OK
+   BODY_HASH: 3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+
+2. GET /full/assessments/:id/summary (LIGHT/no entitlement)...
+   Status: 403
+✓ LIGHT/no entitlement: Status 403 (gate funcionando)
+   Response: {"error":"conteúdo disponível apenas no FULL"}
+
+3. GET /full/assessments/:id/next-best-actions (FULL entitlement)...
+   Status: 200
+✓ FULL entitlement: Status 200 OK
+   BODY_HASH: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+
+4. GET /full/assessments/:id/next-best-actions (LIGHT/no entitlement)...
+   Status: 403
+✓ LIGHT/no entitlement: Status 403 (gate funcionando)
+   Response: {"error":"conteúdo disponível apenas no FULL"}
+
+=== Entitlement Test Summary ===
+
+FULL entitlement:
+  SUMMARY: Status 200, BODY_HASH=3f8a9b2c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1
+  NEXT-BEST-ACTIONS: Status 200, BODY_HASH=7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+
+LIGHT/no entitlement:
+  SUMMARY: Status 403
+  NEXT-BEST-ACTIONS: Status 403
+
+✓ Entitlement gate working: At least one endpoint returned 403 for non-FULL
+✓ FULL entitlement: Both endpoints returned 200

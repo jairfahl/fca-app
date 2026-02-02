@@ -1,0 +1,22 @@
+{
+  "name": "fca-mtr",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
+    "install:all": "npm install",
+    "db:migrate": "node db/run-migrations.js",
+    "db:seed": "node db/seed/seed-recommendations.js",
+    "db:seed:f3": "node db/seed/seed-f3-recommendations.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "dotenv": "^16.3.1"
+  }
+}
