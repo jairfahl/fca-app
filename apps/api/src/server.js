@@ -2,7 +2,7 @@
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../../.env') });
 const path = require('path');
 const dotenv = require('dotenv');
-
+// CURSOR_EDIT_TEST
 // Carrega SEMPRE o .env da raiz do monorepo: ~/Downloads/fca-mtr/.env
 // __dirname aqui é: ~/Downloads/fca-mtr/apps/api/src
 const ENV_PATH = path.resolve(__dirname, '../../../.env');
@@ -10,9 +10,8 @@ dotenv.config({ path: ENV_PATH });
 
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
 const { parse } = require('pg-connection-string');
-const { initPool } = require('./db');
+const { initPool, createPgPool } = require('./db');
 const pingRoutes = require('./routes/ping');
 const companiesRoutes = require('./routes/companies');
 const assessmentsRoutes = require('./routes/assessments');
@@ -122,34 +121,6 @@ function dumpDbEnv() {
   }
 }
 
-function buildPgConfigFromDatabaseUrl() {
-  const raw = process.env.DATABASE_URL;
-  if (!raw) throw new Error('[DBCHECK] DATABASE_URL missing');
-
-  const u = new URL(raw);
-  // pathname vem como "/postgres" ou "/database", remover barra inicial
-  const database = (u.pathname || '/postgres').replace(/^\//, '') || 'postgres';
-  
-  const cfg = {
-    host: u.hostname,
-    port: u.port ? Number(u.port) : 5432,
-    database: database,
-    user: decodeURIComponent(u.username),
-    password: decodeURIComponent(u.password),
-    ssl: { rejectUnauthorized: false }
-  };
-
-  // Log SEM senha
-  console.log('[DBCHECK] Pool explicit cfg (redacted):', {
-    host: cfg.host,
-    port: cfg.port,
-    database: cfg.database,
-    user: cfg.user,
-    passLen: cfg.password ? String(cfg.password).length : 0
-  });
-
-  return cfg;
-}
 
 // Inicializar conexão com banco e iniciar servidor
 async function startServer() {
@@ -163,9 +134,9 @@ async function startServer() {
       // Instrumentação: dump config efetiva antes de conectar
       dumpDbEnv();
 
-      // Construir config explícita a partir de DATABASE_URL
-      const poolCfg = buildPgConfigFromDatabaseUrl();
-      const dbCheckPool = new Pool(poolCfg);
+      // Usar helper createPgPool() que já valida guardrail e aplica SSL correto
+      // Os logs de SSL_MODE e conexão já são feitos dentro de createPgPool()
+      const dbCheckPool = createPgPool();
 
       // Provar o que o pg está usando internamente (sem senha)
       console.log('[DBCHECK] pool.options (redacted):', {
@@ -176,8 +147,7 @@ async function startServer() {
         ssl: !!dbCheckPool.options.ssl
       });
 
-      const result = await dbCheckPool.query('SELECT NOW() as now');
-      const now = result.rows[0].now.toISOString();
+      const result = await dbCheckPool.query('SELECT 1');
       await dbCheckPool.end();
       console.log('DB CHECK OK');
 
@@ -190,6 +160,10 @@ async function startServer() {
         code: err.code || null,
         detail: err.detail || null
       });
+      // Se for erro de guardrail (production + relaxed), abortar boot
+      if (err.message && err.message.includes('DB_SSL_RELAXED')) {
+        process.exit(1);
+      }
     }
   }
 

@@ -1,8 +1,6 @@
 const { Pool } = require('pg');
 const { parse } = require('pg-connection-string');
 
-let pool = null;
-
 /**
  * Verifica se DB_SSL_RELAXED está habilitado
  * Considera true se valor ∈ {"1","true","TRUE","yes","YES"}
@@ -39,7 +37,7 @@ function validateSslGuardrail() {
 /**
  * Cria configuração do Pool PostgreSQL a partir de DATABASE_URL
  * Aplica SSL baseado em DB_SSL_RELAXED
- * @returns {Object} Configuração do Pool
+ * @returns {Pool} Pool do PostgreSQL configurado
  */
 function createPgPool() {
   const rawUrl = process.env.DATABASE_URL;
@@ -77,46 +75,9 @@ function createPgPool() {
   return new Pool(config);
 }
 
-/**
- * Inicializa o pool de conexões PostgreSQL
- */
-function initPool() {
-  pool = createPgPool();
-  return pool;
-}
-
-/**
- * Testa a conexão com o banco de dados
- * @returns {Promise<{ok: boolean, now: string|null, error: string|null}>}
- */
-async function checkConnection() {
-  if (!pool) {
-    initPool();
-  }
-
-  try {
-    const result = await pool.query('SELECT NOW() as now');
-    const now = result.rows[0].now.toISOString();
-    return { ok: true, now, error: null };
-  } catch (error) {
-    return { ok: false, now: null, error: error.message };
-  }
-}
-
-/**
- * Obtém o pool de conexões (inicializa se necessário)
- */
-function getPool() {
-  if (!pool) {
-    initPool();
-  }
-  return pool;
-}
-
 module.exports = {
-  initPool,
-  checkConnection,
-  getPool,
   createPgPool,
-  getDbSslMode
+  getDbSslMode,
+  isDbSslRelaxed,
+  validateSslGuardrail
 };

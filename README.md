@@ -43,6 +43,7 @@ cp .env.example .env
    - `PORT`: Porta da API (padrão: 3001)
    - `NODE_ENV`: Ambiente (development/production)
    - `FRONTEND_ORIGINS`: Origens permitidas para CORS (ex: `http://localhost:3000,http://localhost:3001`)
+   - `DB_SSL_RELAXED`: Configuração SSL (opcional, apenas desenvolvimento). Veja [docs/DB_SSL.md](docs/DB_SSL.md) para detalhes.
 
 ## Como rodar
 

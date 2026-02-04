@@ -1,5 +1,12 @@
 require('dotenv').config();
-const { Pool } = require('pg');
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Load env from repo root
+const envPath = path.resolve(__dirname, '../../../.env');
+dotenv.config({ path: envPath });
+
+const { createPgPool } = require('../lib/dbSsl');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -8,12 +15,8 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: DATABASE_URL.includes('localhost') ? false : {
-    rejectUnauthorized: false
-  }
-});
+// Usar helper que aplica DB_SSL_RELAXED e guardrail de produção
+const pool = createPgPool();
 
 // Recomendações F3 - estrutura completa com process, segment, why, risk, impact, checklist_json, trigger_json
 const recommendations = [
