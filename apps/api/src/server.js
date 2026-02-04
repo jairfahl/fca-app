@@ -8,72 +8,13 @@ const dotenv = require('dotenv');
 const ENV_PATH = path.resolve(__dirname, '../../../.env');
 dotenv.config({ path: ENV_PATH });
 
-const express = require('express');
-const cors = require('cors');
 const { parse } = require('pg-connection-string');
 const { initPool, createPgPool } = require('./db');
-const pingRoutes = require('./routes/ping');
-const companiesRoutes = require('./routes/companies');
-const assessmentsRoutes = require('./routes/assessments');
-const f3Routes = require('./routes/f3');
-const f4Routes = require('./routes/f4');
-const f4bRoutes = require('./routes/f4b');
-const gateCRoutes = require('./routes/gateC');
-const leadsRoutes = require('./routes/leads');
+const app = require('./app');
 
 console.log('API START');
 
-const app = express();
 const PORT = Number(process.env.PORT) || 3001;
-
-// Configurar CORS
-const allowedOrigins = (process.env.FRONTEND_ORIGINS || 'http://localhost:3000')
-  .split(',')
-  .map(origin => origin.trim())
-  .filter(origin => origin.length > 0);
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Permitir requests sem origin (curl, postman, etc)
-    if (!origin) {
-      return callback(null, true);
-    }
-    // Verificar se origin está na whitelist
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: false
-};
-
-// Habilitar preflight
-app.options('*', cors(corsOptions));
-
-// Aplicar CORS antes das rotas
-app.use(cors(corsOptions));
-app.use(express.json());
-
-// Rotas
-app.use('/', pingRoutes);
-app.use('/companies', companiesRoutes);
-app.use('/assessments', assessmentsRoutes);
-app.use('/', f3Routes);
-app.use('/', f4Routes);
-app.use('/', f4bRoutes);
-app.use('/', gateCRoutes);
-app.use('/', leadsRoutes);
-console.log('ROUTES OK: f4 mounted');
-console.log('ROUTES OK: f4b mounted');
-console.log('ROUTES OK: gateC mounted');
-
-// Health check legacy (mantido para compatibilidade)
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', message: 'API is running' });
-});
 
 // Funções de instrumentação para DB CHECK
 function redactDbUrl(url) {
