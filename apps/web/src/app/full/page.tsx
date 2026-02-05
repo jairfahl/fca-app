@@ -2,10 +2,16 @@
 
 import { Suspense, useState, useEffect, useRef } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import AppShell from '@/components/AppShell';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetchAuth } from '@/lib/apiAuth';
+import PageHeader from '@/components/ui/PageHeader';
+import Breadcrumbs from '@/components/ui/Breadcrumbs';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import PaywallCard from '@/components/PaywallCard';
 
 type FullPageState = 'loading' | 'success' | 'blocked' | 'error' | 'missing_company';
 
@@ -24,6 +30,7 @@ function FullContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const companyId = searchParams.get('company_id');
+  const diagnosticoHref = companyId ? `/diagnostico?company_id=${companyId}` : '/diagnostico';
 
   const [state, setState] = useState<FullPageState>('loading');
   const [fullData, setFullData] = useState<any>(null);
@@ -213,17 +220,8 @@ function FullContent() {
   }, [companyId]); // Dependência apenas em companyId
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-        Logado como: {user?.email}
-      </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
-        {' | '}
-        <Link href="/diagnostico" style={{ color: '#0070f3' }}>Voltar ao Diagnóstico</Link>
-      </div>
-
-      <h1 style={{ marginBottom: '1rem' }}>Diagnóstico Completo (FULL)</h1>
+    <AppShell showLogout userEmail={user?.email}>
+      <PageHeader title="Diagnóstico Completo (FULL)" subtitle="Acesso ao conteúdo completo do diagnóstico." breadcrumbs={<Breadcrumbs />} />
 
       {state === 'loading' && (
         <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -260,96 +258,58 @@ function FullContent() {
       )}
 
       {state === 'success' && fullData && (
-        <div>
-          <div style={{
-            border: '1px solid #28a745',
-            borderRadius: '8px',
-            padding: '1rem',
-            backgroundColor: '#d4edda',
-            color: '#155724',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}>
-            <span style={{ fontSize: '1.25rem' }}>✓</span>
-            <div>
-              <strong>Diagnóstico completo carregado com sucesso</strong>
-              <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.8 }}>
-                Plano FULL ativo
-              </div>
+        <div style={{ display: 'grid', gap: '1rem' }}>
+          <Card>
+            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Relatório Executivo FULL</div>
+            <div style={{ color: '#6b7280', marginBottom: '1rem' }}>
+              Acesse as seções do relatório para navegar rapidamente.
             </div>
-          </div>
-
-          <div style={{
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            padding: '2rem',
-            backgroundColor: '#fff',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ marginBottom: '1rem', color: '#333' }}>
-              Conteúdo do Diagnóstico Completo
-            </h2>
-            <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.875rem' }}>
-              Dados retornados pelo endpoint /full/diagnostic:
-            </p>
-            <pre style={{
-              backgroundColor: '#f8f9fa',
-              padding: '1rem',
-              borderRadius: '4px',
-              overflow: 'auto',
-              fontSize: '0.875rem',
-              lineHeight: '1.5',
-              border: '1px solid #dee2e6',
-              maxHeight: '500px'
-            }}>
-              {JSON.stringify(fullData, null, 2)}
-            </pre>
-          </div>
+            {(() => {
+              const assessmentId = fullData?.assessment?.id || fullData?.assessment_id || null;
+              const diagHref = assessmentId ? `/full/diagnostic?assessment_id=${assessmentId}` : '/full/diagnostic';
+              const initHref = assessmentId ? `/full/initiatives?assessment_id=${assessmentId}` : '/full/initiatives';
+              const summaryHref = assessmentId ? `/full/summary?assessment_id=${assessmentId}` : '/full/summary';
+              return (
+                <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+                  <Card>
+                    <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Diagnóstico FULL</div>
+                    <div style={{ color: '#6b7280', marginBottom: '0.75rem' }}>
+                      Resumo executivo e próximos passos.
+                    </div>
+                    <Button href={diagHref}>Abrir</Button>
+                  </Card>
+                  <Card>
+                    <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Iniciativas (Top‑12)</div>
+                    <div style={{ color: '#6b7280', marginBottom: '0.75rem' }}>
+                      Lista priorizada de iniciativas.
+                    </div>
+                    <Button href={initHref}>Abrir</Button>
+                  </Card>
+                  <Card>
+                    <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Resumo Executivo</div>
+                    <div style={{ color: '#6b7280', marginBottom: '0.75rem' }}>
+                      Scores e principais gaps.
+                    </div>
+                    <Button href={summaryHref}>Abrir</Button>
+                  </Card>
+                </div>
+              );
+            })()}
+          </Card>
         </div>
       )}
 
       {state === 'blocked' && (
-        <div style={{
-          border: '2px solid #ffc107',
-          borderRadius: '8px',
-          padding: '2rem',
-          backgroundColor: '#fff3cd',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ marginBottom: '1rem', color: '#856404' }}>
-            Conteúdo disponível apenas no FULL
-          </h2>
-          <p style={{ marginBottom: '1.5rem', color: '#856404', lineHeight: '1.6' }}>
-            Este diagnóstico completo requer um plano FULL ativo.
-            No plano LIGHT você tem acesso apenas ao resumo dos resultados.
-          </p>
-          
-          <Link
-            href={`/paywall?company_id=${companyId}`}
-            style={{
-              display: 'inline-block',
-              backgroundColor: '#0070f3',
-              color: '#fff',
-              padding: '1rem 2rem',
-              borderRadius: '8px',
-              fontSize: '1.125rem',
-              fontWeight: 'bold',
-              textDecoration: 'none',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#0051cc';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#0070f3';
-            }}
-          >
-            Ver planos
-          </Link>
-        </div>
+        <PaywallCard
+          primaryLabel="Ver planos"
+          primaryHref={companyId ? `/paywall?company_id=${companyId}` : '/paywall'}
+          secondaryLabel="Voltar"
+          secondaryHref={diagnosticoHref}
+          note={process.env.NODE_ENV === 'development'
+            ? 'Ambiente de testes: acesso FULL depende de entitlement/configuração do servidor.'
+            : undefined}
+        />
       )}
-    </div>
+    </AppShell>
   );
 }

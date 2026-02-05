@@ -1,5 +1,8 @@
 # DB_SSL_RELAXED - Configuração SSL para PostgreSQL
 
+---
+
+Ultima atualizacao: 2026-02-04.
 ## Visão Geral
 
 A flag `DB_SSL_RELAXED` permite configurar o modo SSL das conexões PostgreSQL para suportar TLS MITM (Man-In-The-Middle) local, útil para desenvolvimento e debugging com proxies locais ou certificados auto-assinados.

@@ -1,5 +1,8 @@
 # Evidências de Auditoria F3
 
+---
+
+Ultima atualizacao: 2026-02-04.
 ## Pré-requisitos
 
 1. Assessment LIGHT concluído (status = COMPLETED)

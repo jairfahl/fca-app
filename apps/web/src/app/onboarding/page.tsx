@@ -2,10 +2,16 @@
 
 import { useEffect, useState, useRef } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import AppShell from '@/components/AppShell';
 import { useAuth } from '@/lib/auth';
 import { apiFetch } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import PageHeader from '@/components/ui/PageHeader';
+import Breadcrumbs from '@/components/ui/Breadcrumbs';
+import Card from '@/components/ui/Card';
+import Button from '@/components/ui/Button';
+import Alert from '@/components/ui/Alert';
 
 export default function OnboardingPage() {
   return (
@@ -24,6 +30,7 @@ function OnboardingContent() {
   const [segment, setSegment] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [step, setStep] = useState(1);
   // Trava anti-loop: useRef não causa re-render, então não dispara novo effect
   const hasCheckedRef = useRef(false);
 
@@ -110,103 +117,121 @@ function OnboardingContent() {
 
   if (authLoading || checking || loading) {
     return (
-      <div style={{ padding: '2rem', textAlign: 'center' }}>
-        Carregando...
-      </div>
+      <AppShell showLogout>
+        <PageHeader title="Cadastro da Empresa" subtitle="Configure sua empresa para iniciar o diagnóstico." breadcrumbs={<Breadcrumbs />} />
+        <div style={{ textAlign: 'center' }}>Carregando...</div>
+      </AppShell>
     );
   }
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-        Logado como: {user?.email}
-      </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <Link href="/logout" style={{ color: '#0070f3' }}>
-          Sair
-        </Link>
+    <AppShell showLogout>
+      <PageHeader title="Cadastro da Empresa" subtitle="Configure sua empresa para iniciar o diagnóstico." breadcrumbs={<Breadcrumbs />} />
+      <div style={{ marginBottom: '1rem', color: '#6b7280', fontSize: '0.9rem' }}>
+        Passo {step} de 2
       </div>
       
-      <h1 style={{ marginBottom: '2rem' }}>Cadastro da Empresa</h1>
-      
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label htmlFor="name" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Nome da empresa:
-          </label>
-          <input
-            id="name"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              boxSizing: 'border-box',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '1rem',
-            }}
-            placeholder="Digite o nome da empresa"
-          />
-        </div>
+      <Card>
+        <form onSubmit={handleSubmit}>
+          {step === 1 && (
+            <>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label htmlFor="name" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Nome da empresa
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    boxSizing: 'border-box',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                  }}
+                  placeholder="Digite o nome da empresa"
+                />
+              </div>
 
-        <div style={{ marginBottom: '1.5rem' }}>
-          <label htmlFor="segment" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-            Segmento:
-          </label>
-          <select
-            id="segment"
-            value={segment}
-            onChange={(e) => setSegment(e.target.value)}
-            required
-            style={{
-              width: '100%',
-              padding: '0.75rem',
-              boxSizing: 'border-box',
-              border: '1px solid #ddd',
-              borderRadius: '4px',
-              fontSize: '1rem',
-            }}
-          >
-            <option value="">Selecione um segmento</option>
-            <option value="SERVICOS">Serviços</option>
-            <option value="COMERCIO">Comércio</option>
-            <option value="INDUSTRIA">Indústria</option>
-          </select>
-        </div>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label htmlFor="segment" style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Segmento
+                </label>
+                <select
+                  id="segment"
+                  value={segment}
+                  onChange={(e) => setSegment(e.target.value)}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    boxSizing: 'border-box',
+                    border: '1px solid #ddd',
+                    borderRadius: '4px',
+                    fontSize: '1rem',
+                  }}
+                >
+                  <option value="">Selecione um segmento</option>
+                  <option value="SERVICOS">Serviços</option>
+                  <option value="COMERCIO">Comércio</option>
+                  <option value="INDUSTRIA">Indústria</option>
+                </select>
+              </div>
 
-        {error && (
-          <div style={{
-            color: '#d32f2f',
-            marginBottom: '1rem',
-            padding: '0.75rem',
-            backgroundColor: '#ffebee',
-            borderRadius: '4px',
-          }}>
-            {error}
-          </div>
-        )}
+              {error && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <Alert variant="error">{error}</Alert>
+                </div>
+              )}
 
-        <button
-          type="submit"
-          disabled={saving}
-          style={{
-            width: '100%',
-            padding: '0.75rem',
-            backgroundColor: saving ? '#ccc' : '#0070f3',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '1rem',
-            fontWeight: 'bold',
-            cursor: saving ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {saving ? 'Salvando...' : 'Continuar'}
-        </button>
-      </form>
-    </div>
+              <Button
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  if (!name.trim() || !segment) {
+                    setError('Preencha nome e segmento para continuar');
+                    return;
+                  }
+                  setError('');
+                  setStep(2);
+                }}
+                style={{ width: '100%' }}
+              >
+                Continuar
+              </Button>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <div style={{ marginBottom: '1.5rem' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Confirmação</div>
+                <div style={{ color: '#6b7280' }}>Empresa: {name}</div>
+                <div style={{ color: '#6b7280' }}>Segmento: {segment}</div>
+              </div>
+
+              {error && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <Alert variant="error">{error}</Alert>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                <Button type="button" variant="ghost" onClick={() => setStep(1)}>
+                  Voltar
+                </Button>
+                <Button type="submit" disabled={saving} style={{ flex: 1 }}>
+                  {saving ? 'Salvando...' : 'Continuar'}
+                </Button>
+              </div>
+            </>
+          )}
+        </form>
+      </Card>
+    </AppShell>
   );
 }

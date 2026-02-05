@@ -15,6 +15,30 @@ const { supabase } = require('../lib/supabase');
  */
 async function requireFullEntitlement(req, res, next) {
   try {
+    const modeRaw = process.env.FULL_ACCESS_MODE || 'ENFORCED';
+    const mode = String(modeRaw).trim().toUpperCase();
+    const userEmail = req.user && req.user.email ? String(req.user.email).toLowerCase() : null;
+
+    if (mode === 'BYPASS_DEV') {
+      if (nodeEnv === 'production') {
+        return res.status(403).json({ error: 'BYPASS_DEV proibido em produção' });
+      }
+      return next();
+    }
+
+    if (mode === 'BYPASS_EMAILS') {
+      const allowRaw = process.env.FULL_BYPASS_EMAILS || '';
+      const allowList = allowRaw
+        .split(',')
+        .map(email => email.trim().toLowerCase())
+        .filter(email => email.length > 0);
+
+      if (userEmail && allowList.includes(userEmail)) {
+        return next();
+      }
+      // Caso não esteja na allowlist, seguir validação normal (ENFORCED)
+    }
+
     // Ler company_id de query ou body
     const companyId = req.query.company_id || req.body.company_id;
 

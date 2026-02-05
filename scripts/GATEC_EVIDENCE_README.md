@@ -1,5 +1,8 @@
 # Gate C Evidence Pack - Scripts de Teste
 
+---
+
+Ultima atualizacao: 2026-02-04.
 ## Arquivos Criados
 
 1. **`scripts/test-gatec-determinism.sh`** - Testa determinismo dos endpoints Gate C

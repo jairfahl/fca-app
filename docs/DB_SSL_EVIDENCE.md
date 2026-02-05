@@ -1,5 +1,8 @@
 # DB_SSL_RELAXED - Evidências de Comportamento
 
+---
+
+Ultima atualizacao: 2026-02-04.
 Este documento registra evidências dos 3 cenários principais do guardrail `DB_SSL_RELAXED`.
 
 ## Como gerar evidências

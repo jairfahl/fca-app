@@ -1,5 +1,8 @@
 # Gate C: GET /full/assessments/:id/next-best-actions
 
+---
+
+Ultima atualizacao: 2026-02-04.
 ## Objetivo
 
 Entregar "o que fazer agora" sem criar plano novo, apenas compondo com base em dependências do catálogo.

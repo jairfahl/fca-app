@@ -1,5 +1,8 @@
 # Gate D1 - Status da Migração
 
+---
+
+Ultima atualizacao: 2026-02-04.
 ## Migração Criada
 
 ✅ **Arquivo criado:** `db/migrations/009_d1_leads_triage.sql`

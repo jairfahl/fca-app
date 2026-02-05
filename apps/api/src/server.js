@@ -13,6 +13,13 @@ const { initPool, createPgPool } = require('./db');
 const app = require('./app');
 
 console.log('API START');
+const nodeEnv = process.env.NODE_ENV || '';
+const fullAccessMode = String(process.env.FULL_ACCESS_MODE || 'ENFORCED').trim().toUpperCase();
+console.log(`[FULL] FULL_ACCESS_MODE=${fullAccessMode} NODE_ENV=${nodeEnv}`);
+
+if (nodeEnv === 'production' && fullAccessMode === 'BYPASS_DEV') {
+  throw new Error('[FULL] FATAL: BYPASS_DEV proibido em produção');
+}
 
 const PORT = Number(process.env.PORT) || 3001;
 

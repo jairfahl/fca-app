@@ -1,5 +1,8 @@
 # FCA MTR
 
+---
+
+Ultima atualizacao: 2026-02-04.
 Monorepo com API (Node/Express) e Web (Next.js).
 
 ## Estrutura
@@ -63,12 +66,16 @@ Quando a API estiver pronta e escutando na porta, você verá no console a mensa
 
 ```
 API START
+[DB] SSL_MODE=STRICT
+[DB] DATABASE_URL_HOST=... USER=... DB=...
 DB CHECK OK
 READY
 Server listening on http://localhost:3001
 ```
 
 A mensagem **"READY"** é impressa quando o servidor Express começa a escutar na porta configurada, confirmando que o backend está pronto para receber requisições.
+
+**Nota:** Os logs `[DB] SSL_MODE=...` e `[DB] DATABASE_URL_HOST=...` aparecem sempre no boot, indicando o modo SSL configurado (STRICT ou RELAXED) e informações de conexão (sem expor senha). Veja [docs/DB_SSL.md](docs/DB_SSL.md) para detalhes sobre `DB_SSL_RELAXED`.
 
 ## Migrações de Banco de Dados
 
@@ -118,6 +125,7 @@ As migrações estão localizadas em `db/migrations/`:
 - `006_f4_entitlements.sql`: Tabelas para controle de acesso (entitlements) e eventos de paywall (paywall_events)
 - `007_f4b_full_initiatives.sql`: Tabela legacy de iniciativas FULL (não utilizada)
 - `008_f4b_full_initiatives_catalog_and_rank.sql`: Catálogo de iniciativas FULL e ranking persistido por assessment
+- `009_d1_leads_triage.sql`: Tabela de triagem de leads (Gate D1)
 
 ## Scripts disponíveis
 
@@ -143,7 +151,7 @@ As migrações estão localizadas em `db/migrations/`:
 
 ### Diagnóstico
 - `/diagnostico?company_id=<uuid>`: Tela de diagnóstico (LIGHT ou FULL conforme entitlement)
-- `/results?assessment_id=<uuid>`: Resultados do diagnóstico LIGHT
+- `/results?assessment_id=<uuid>`: Resultados do diagnóstico LIGHT (inclui teaser FULL e triagem)
 - `/recommendations?assessment_id=<uuid>`: Top 10 de recomendações (F3)
 - `/free-action/[id]`: Página para executar ação gratuita e registrar evidência (F3)
 
@@ -166,6 +174,7 @@ As migrações estão localizadas em `db/migrations/`:
 - `POST /assessments/light`: Cria assessment LIGHT (status DRAFT)
 - `POST /assessments/:id/light/submit`: Submete assessment LIGHT (persiste 12 itens, calcula scores, marca COMPLETED)
 - `GET /assessments/:id`: Recupera assessment completo (items + scores)
+- `GET /assessments/:id/full-teaser`: Retorna teaser FULL (TOP 3 iniciativas) sem violar entitlement
 
 ### Recommendations e Free Actions (F3)
 - `GET /assessments/:id/recommendations`: Gera/retorna Top 10 de recomendações determinísticas
@@ -186,6 +195,15 @@ As migrações estão localizadas em `db/migrations/`:
 - `GET /full/assessments/:id/summary?company_id=<uuid>`: Resumo executivo do diagnóstico FULL (scores, critical gaps, top initiatives, dependencies, highlights)
 - `GET /full/assessments/:id/next-best-actions?company_id=<uuid>`: Próximas melhores ações (ready_now vs blocked_by baseado em dependências)
 
+### Leads e Triagem (Gate D1)
+- `POST /leads/triage`: Captura lead qualificado (triagem comercial) sem poluir diagnóstico
+  - Payload: `company_id`, `assessment_id`, `pain`, `horizon`, `budget_monthly`, `consent`
+  - Retorna `409` se triagem já existe para o assessment
+  - RLS: usuário só insere/consulta próprios registros
+
+### Aliases e Compatibilidade
+- `GET /diagnostico?company_id=<uuid>`: Alias que redireciona (307) para `/full/diagnostic` mantendo querystring
+
 ## Evidências F1 — copiar/colar
 
 ### 1. `npm run dev` — API imprime "READY"
@@ -197,10 +215,14 @@ $ npm run dev
 **Output esperado:**
 ```
 API START
+[DB] SSL_MODE=STRICT
+[DB] DATABASE_URL_HOST=... USER=... DB=...
 DB CHECK OK
 READY
 Server listening on http://localhost:3001
 ```
+
+**Nota:** Os logs `[DB] SSL_MODE=...` e `[DB] DATABASE_URL_HOST=...` aparecem sempre no boot, indicando o modo SSL configurado (STRICT ou RELAXED) e informações de conexão (sem expor senha).
 
 ### 2. `npm run db:migrate` — imprime "MIGRATIONS OK"
 
@@ -212,7 +234,7 @@ $ npm run db:migrate
 **Output esperado:**
 ```
 Iniciando migrações...
-8 migração(ões) pendente(s)
+9 migração(ões) pendente(s)
 MIGRATION APPLIED: 001_init.sql
 MIGRATION APPLIED: 002_f2_schema_fixes.sql
 MIGRATION APPLIED: 003_f3_recommendations_ranked.sql
@@ -221,6 +243,7 @@ MIGRATION APPLIED: 005_f3_assessment_free_action_evidences.sql
 MIGRATION APPLIED: 006_f4_entitlements.sql
 MIGRATION APPLIED: 007_f4b_full_initiatives.sql
 MIGRATION APPLIED: 008_f4b_full_initiatives_catalog_and_rank.sql
+MIGRATION APPLIED: 009_d1_leads_triage.sql
 MIGRATIONS OK
 ```
 
@@ -299,9 +322,22 @@ Todas as tabelas possuem RLS habilitado:
 - Usuários só acessam dados de suas próprias companies
 - Validação explícita de ownership no backend (defesa em profundidade)
 
+### Configuração SSL (DB_SSL_RELAXED)
+
+O sistema suporta configuração SSL flexível para desenvolvimento local:
+- `DB_SSL_RELAXED=true`: Permite certificados auto-assinados (apenas desenvolvimento)
+- `DB_SSL_RELAXED=false` ou não definido: Validação SSL estrita (padrão)
+- **Guardrail fail-closed**: Em produção (`NODE_ENV=production`), SSL relaxado é bloqueado e aborta o boot
+
+Ver documentação completa em `docs/DB_SSL.md` e causa raiz do incidente em `AUTH_FAIL_CLOSED_FIX.md`.
+
 ## Documentação Adicional
 
-- `AUTH_FAIL_CLOSED_FIX.md`: Documentação da correção crítica de segurança
+- `AUTH_FAIL_CLOSED_FIX.md`: Documentação da correção crítica de segurança e causa raiz do incidente TLS
+- `docs/DB_SSL.md`: Documentação completa sobre DB_SSL_RELAXED (configuração SSL para desenvolvimento)
+- `docs/DB_SSL_EVIDENCE.md`: Template para evidências dos cenários DB_SSL_RELAXED
+- `D1_AUDIT_EVIDENCE.md`: Evidências de auditoria para Gate D1 (teaser FULL e triagem de leads)
+- `D1_MIGRATION_STATUS.md`: Status da migração 009_d1_leads_triage.sql
 - `F3_AUDIT_EVIDENCE.md`: Evidências de auditoria para F3 (recomendações e ações gratuitas)
 - `F3_CURL_EXAMPLES.md`: Exemplos de cURL para testar endpoints F3
 - `F4_DOCUMENTATION.md`: Documentação completa do F4 (entitlements e paywall)
@@ -319,6 +355,7 @@ Todas as tabelas possuem RLS habilitado:
 - **F4**: Entitlements, Paywall, Gate FULL
 - **F4B**: Iniciativas FULL (catálogo e ranking persistido)
 - **Gate C**: Visão Gerencial Estruturada (summary, next-best-actions)
+- **Gate D1**: Teaser FULL no LIGHT, triagem de leads (leads_triage)
 
 ### Padrões de Código
 
