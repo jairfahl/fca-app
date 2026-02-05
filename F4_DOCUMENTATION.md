@@ -1,8 +1,5 @@
 # Documentação F4 - Entitlements e Paywall
 
----
-
-Ultima atualizacao: 2026-02-04.
 ## Visão Geral
 
 F4 implementa controle de acesso baseado em entitlements (LIGHT/FULL) e sistema de paywall com trilha de eventos auditável.
@@ -500,103 +497,6 @@ Ver `scripts/GATEC_EVIDENCE_README.md` para detalhes.
 
 ## Status
 
-## Gate D1 - Teaser FULL e Triagem de Leads
-
-### Visão Geral
-
-Gate D1 implementa exposição de teaser FULL no fluxo LIGHT e captura de leads qualificados através de triagem comercial.
-
-### Arquivos Principais
-
-- `apps/api/src/routes/assessments.js`: Endpoint GET /assessments/:id/full-teaser
-- `apps/api/src/routes/leads.js`: Endpoint POST /leads/triage
-- `apps/api/src/lib/teaserTemplates.js`: Gerador de frases determinísticas (sem IA)
-- `apps/web/src/app/results/page.tsx`: Tela de resultados LIGHT com teaser FULL
-- `apps/web/src/components/TriageModal.tsx`: Modal de triagem comercial
-- `db/migrations/009_d1_leads_triage.sql`: Migração da tabela leads_triage
-
-### Tabelas
-
-- `public.leads_triage`: Triagem comercial de leads (pain, horizon, budget_monthly)
-  - Constraint UNIQUE: `(owner_user_id, assessment_id)`
-  - RLS: usuário só insere/consulta próprios registros
-
-### Endpoints
-
-#### GET /assessments/:id/full-teaser
-
-Retorna teaser FULL (TOP 3 iniciativas) sem violar entitlement:
-- Fonte: `full_assessment_initiatives` (já persistidas)
-- Retorna TOP 3 por rank (determinístico)
-- Inclui frases determinísticas (dependency_phrase, next_best_action_phrase)
-- Calcula `locked_count = total - 3`
-- Inclui `inaction_cost` baseado em faixas de score
-
-**Payload de resposta:**
-```json
-{
-  "items": [
-    {
-      "title": "...",
-      "process": "...",
-      "impact": "...",
-      "dependency_phrase": "...",
-      "next_best_action_phrase": "..."
-    }
-  ],
-  "locked_count": 9,
-  "inaction_cost": "..."
-}
-```
-
-#### POST /leads/triage
-
-Captura lead qualificado sem poluir diagnóstico:
-- Payload: `company_id`, `assessment_id`, `pain`, `horizon`, `budget_monthly`, `consent`
-- Retorna `409` se triagem já existe para o assessment
-- Não gera score, rank ou reprocessa assessment
-- RLS garante ownership correto
-
-**Payload de requisição:**
-```json
-{
-  "company_id": "...",
-  "assessment_id": "...",
-  "pain": "CAIXA|VENDA|OPERACAO|PESSOAS",
-  "horizon": "30|60|90",
-  "budget_monthly": "ZERO|ATE_300|DE_301_800|DE_801_2000|ACIMA_2000",
-  "consent": true
-}
-```
-
-### Frontend
-
-**Tela de Resultados LIGHT (`/results`):**
-- Bloco "Teaser FULL" com TOP 3 iniciativas
-- Locked count: "+X iniciativas no FULL"
-- Botão "Liberar Relatório Executivo Completo"
-- Botão "Quero falar com um consultor" (abre modal de triagem)
-- Confirmação simples após submit (sem prometer prazo)
-
-**Modal de Triagem:**
-- 3 perguntas: pain, horizon, budget_monthly
-- Submit → POST /leads/triage
-- Confirmação: "✓ Sua solicitação foi enviada. Entraremos em contato em breve."
-
-### Frases Determinísticas
-
-**Arquivo:** `apps/api/src/lib/teaserTemplates.js`
-
-- `generateDependencyPhrase()`: Gera frase de dependência se initiative tem dependências
-- `generateNextBestActionPhrase()`: Gera frase de Next Best Action
-- `generateInactionCost()`: Gera texto de custo da inação baseado em faixas de score
-
-Todas as frases são determinísticas (sem IA), baseadas apenas em dados existentes.
-
-### Alias e Compatibilidade
-
-- `GET /diagnostico?company_id=<uuid>`: Alias que redireciona (307) para `/full/diagnostic` mantendo querystring
-
-✅ **IMPLEMENTADO:** Todos os endpoints F4, F4B, Gate C e Gate D1
+✅ **IMPLEMENTADO:** Todos os endpoints F4, F4B e Gate C
 ✅ **TESTADO:** Gate FULL funcionando corretamente
 ✅ **DOCUMENTADO:** Este arquivo + README.md atualizado + documentação Gate C

@@ -2,16 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import AppShell from '@/components/AppShell';
 import { useAuth } from '@/lib/auth';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
-import PageHeader from '@/components/ui/PageHeader';
-import Breadcrumbs from '@/components/ui/Breadcrumbs';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Alert from '@/components/ui/Alert';
-import PaywallCard from '@/components/PaywallCard';
 
 interface FreeAction {
   id: string;
@@ -43,16 +37,11 @@ function FreeActionContent() {
   const { user, session } = useAuth();
   const params = useParams();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const freeActionId = params.id as string;
-  const companyIdParam = searchParams.get('company_id');
-  const assessmentIdParam = searchParams.get('assessment_id');
-  const diagnosticoHref = companyIdParam ? `/diagnostico?company_id=${companyIdParam}` : '/diagnostico';
 
   const [loading, setLoading] = useState(true);
   const [freeAction, setFreeAction] = useState<FreeAction | null>(null);
   const [error, setError] = useState('');
-  const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [evidenceText, setEvidenceText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
@@ -66,7 +55,6 @@ function FreeActionContent() {
       try {
         setLoading(true);
         setError('');
-        setErrorStatus(null);
         const data = await apiFetch(
           `/free-actions/${freeActionId}`,
           {},
@@ -81,22 +69,7 @@ function FreeActionContent() {
           router.push('/login');
           return;
         }
-        if (err instanceof ApiError) {
-          setErrorStatus(err.status);
-          if (err.status === 404) {
-            setError('Ação não encontrada ou link inválido.');
-            return;
-          }
-          if (err.status === 403) {
-            setError('Conteúdo disponível apenas no FULL.');
-            return;
-          }
-          if (err.status >= 500) {
-            setError('Erro interno. Tente novamente.');
-            return;
-          }
-        }
-        setError('Erro interno. Tente novamente.');
+        setError(err.message || 'Erro ao carregar ação gratuita');
       } finally {
         setLoading(false);
       }
@@ -116,7 +89,6 @@ function FreeActionContent() {
     try {
       setSubmitting(true);
       setError('');
-      setErrorStatus(null);
       setSuccessMessage('');
 
       await apiFetch(
@@ -146,26 +118,13 @@ function FreeActionContent() {
           router.push('/login');
           return;
         }
-        setErrorStatus(err.status);
         if (err.status === 409) {
           setError('Evidência já registrada.');
-          return;
+        } else {
+          setError(err.message || 'Erro ao registrar evidência');
         }
-        if (err.status === 403) {
-          setError('Conteúdo disponível apenas no FULL.');
-          return;
-        }
-        if (err.status === 404) {
-          setError('Ação não encontrada ou link inválido.');
-          return;
-        }
-        if (err.status >= 500) {
-          setError('Erro interno. Tente novamente.');
-          return;
-        }
-        setError('Erro interno. Tente novamente.');
       } else {
-        setError('Erro interno. Tente novamente.');
+        setError(err.message || 'Erro ao registrar evidência');
       }
     } finally {
       setSubmitting(false);
@@ -174,63 +133,40 @@ function FreeActionContent() {
 
   if (loading) {
     return (
-      <AppShell showLogout userEmail={user?.email}>
-        <PageHeader title="Evidência" subtitle="Comprove a execução da ação escolhida." breadcrumbs={<Breadcrumbs />} />
-        <Card>
-          <div style={{ textAlign: 'center' }}>Carregando ação gratuita...</div>
-        </Card>
-      </AppShell>
+      <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center' }}>Carregando ação gratuita...</div>
+      </div>
     );
   }
 
   if (!freeAction) {
     return (
-      <AppShell showLogout userEmail={user?.email}>
-        <PageHeader title="Evidência" subtitle="Comprove a execução da ação escolhida." breadcrumbs={<Breadcrumbs />} />
-        {errorStatus === 403 ? (
-          <PaywallCard
-            primaryLabel="Ver planos"
-            primaryHref={companyIdParam ? `/paywall?company_id=${companyIdParam}` : '/paywall'}
-            secondaryLabel="Voltar"
-            secondaryHref={diagnosticoHref}
-          />
-        ) : (
-          <Card>
-            <div style={{ color: '#dc3545', marginBottom: '0.75rem' }}>
-              {error || 'Ação não encontrada ou link inválido.'}
-            </div>
-            <Button variant="ghost" href={diagnosticoHref}>Voltar ao Diagnóstico</Button>
-          </Card>
-        )}
-      </AppShell>
+      <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ color: '#dc3545' }}>Ação gratuita não encontrada.</div>
+        <Link href="/diagnostico" style={{ color: '#0070f3' }}>Voltar ao Diagnóstico</Link>
+      </div>
     );
   }
 
   const isCompleted = freeAction.status === 'COMPLETED';
   const hasEvidence = freeAction.evidence !== null;
-  const assessmentId = freeAction.assessment_id || assessmentIdParam;
-  const resultsHref = assessmentId
-    ? `/results?assessment_id=${assessmentId}${companyIdParam ? `&company_id=${companyIdParam}` : ''}`
-    : '/results';
-  const recommendationsHref = assessmentId
-    ? `/recommendations?assessment_id=${assessmentId}${companyIdParam ? `&company_id=${companyIdParam}` : ''}`
-    : '/recommendations';
 
   return (
-    <AppShell showLogout userEmail={user?.email}>
-      <PageHeader
-        title="Evidência"
-        subtitle="Comprove a execução da ação escolhida."
-        breadcrumbs={<Breadcrumbs />}
-        actions={(
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Button variant="ghost" href={recommendationsHref}>Voltar para Recomendações</Button>
-            <Button variant="ghost" href={resultsHref}>Voltar para Resultados</Button>
-          </div>
-        )}
-      />
+    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+        Logado como: {user?.email}
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
+        {' | '}
+        <Link href={`/recommendations?assessment_id=${freeAction.assessment_id}`} style={{ color: '#0070f3' }}>
+          Voltar às Recomendações
+        </Link>
+      </div>
 
-      {!assessmentId && (
+      <h1 style={{ marginBottom: '1rem' }}>Ação Gratuita</h1>
+
+      {error && (
         <div style={{
           padding: '1rem',
           backgroundColor: '#f8d7da',
@@ -238,29 +174,29 @@ function FreeActionContent() {
           borderRadius: '4px',
           marginBottom: '1rem'
         }}>
-          assessment_id ausente. Não é possível montar a navegação de retorno.
+          {error}
         </div>
       )}
-
-      {error && (
-        <div style={{ marginBottom: '1rem' }}>
-          <Alert variant="error">{error}</Alert>
-        </div>
-      )}
-
 
       {successMessage && (
-        <div style={{ marginBottom: '1rem' }}>
-          <Alert variant="success">
-            Evidência salva.
-          </Alert>
-          <div style={{ marginTop: '0.5rem' }}>
-            <Button variant="ghost" href={recommendationsHref}>Voltar para Recomendações</Button>
-          </div>
+        <div style={{
+          padding: '1rem',
+          backgroundColor: '#d4edda',
+          color: '#155724',
+          borderRadius: '4px',
+          marginBottom: '1rem'
+        }}>
+          {successMessage}
         </div>
       )}
 
-      <Card style={{ marginBottom: '1.5rem' }}>
+      <div style={{
+        border: '1px solid #ddd',
+        borderRadius: '8px',
+        padding: '1.5rem',
+        marginBottom: '1.5rem',
+        backgroundColor: '#fff'
+      }}>
         <div style={{ marginBottom: '1rem' }}>
           <span style={{
             backgroundColor: '#e9ecef',
@@ -289,21 +225,13 @@ function FreeActionContent() {
 
         <div style={{ marginBottom: '1.5rem' }}>
           <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>Checklist:</h3>
-          {freeAction.recommendation.checklist.length === 0 ? (
-            <div style={{ color: '#6b7280' }}>
-              Sem checklist padrão. Descreva o que foi feito e como comprovou.
-            </div>
-          ) : (
-            <ul style={{ marginLeft: '1.5rem', color: '#666' }}>
-              {freeAction.recommendation.checklist.map((item, idx) => (
-                <li key={idx} style={{ marginBottom: '0.25rem' }}>{item}</li>
-              ))}
-            </ul>
-          )}
+          <ul style={{ marginLeft: '1.5rem', color: '#666' }}>
+            {freeAction.recommendation.checklist.map((item, idx) => (
+              <li key={idx} style={{ marginBottom: '0.25rem' }}>{item}</li>
+            ))}
+          </ul>
         </div>
-      </Card>
 
-      <Card>
         <div>
           <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>
             Evidência {hasEvidence && '(já registrada)'}:
@@ -324,24 +252,37 @@ function FreeActionContent() {
               <textarea
                 value={evidenceText}
                 onChange={(e) => setEvidenceText(e.target.value)}
-                placeholder="Ex.: Foto do quadro de rotina\nEx.: Link do documento ou print do sistema"
-                rows={8}
+                placeholder="Descreva a evidência da ação realizada..."
+                rows={6}
                 disabled={submitting || isCompleted}
                 style={{
                   width: '100%',
                   padding: '0.75rem',
                   border: '1px solid #ddd',
                   borderRadius: '4px',
-                  fontSize: '0.95rem',
+                  fontSize: '0.875rem',
                   fontFamily: 'inherit',
                   resize: 'vertical',
                   marginBottom: '1rem'
                 }}
               />
               {!isCompleted && (
-                <Button type="submit" disabled={submitting || !evidenceText.trim()}>
-                  {submitting ? 'Salvando...' : 'Salvar evidência'}
-                </Button>
+                <button
+                  type="submit"
+                  disabled={submitting || !evidenceText.trim()}
+                  style={{
+                    backgroundColor: submitting ? '#6c757d' : '#0070f3',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '0.75rem 1.5rem',
+                    borderRadius: '4px',
+                    cursor: submitting || !evidenceText.trim() ? 'not-allowed' : 'pointer',
+                    fontSize: '1rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {submitting ? 'Concluindo...' : 'Concluir'}
+                </button>
               )}
             </form>
           )}
@@ -352,7 +293,7 @@ function FreeActionContent() {
             Concluída em: {new Date(freeAction.completed_at).toLocaleString('pt-BR')}
           </div>
         )}
-      </Card>
-    </AppShell>
+      </div>
+    </div>
   );
 }

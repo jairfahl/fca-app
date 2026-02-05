@@ -2,168 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
-const { requireFullEntitlement } = require('../middleware/requireFullEntitlement');
-
-const safeArray = (value) => {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  try {
-    const parsed = JSON.parse(JSON.stringify(value));
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const ensureFullInitiatives = async ({ assessmentId, companyId, userId }) => {
-  const { data: assessment, error: assessErr } = await supabase
-    .schema('public')
-    .from('assessments')
-    .select('id, company_id')
-    .eq('id', assessmentId)
-    .maybeSingle();
-
-  if (assessErr) {
-    throw new Error(`Erro ao buscar assessment (ensureFullInitiatives): ${assessErr.message}`);
-  }
-
-  if (!assessment) {
-    const err = new Error('assessment não encontrado');
-    err.status = 404;
-    throw err;
-  }
-
-  if (companyId && assessment.company_id !== companyId) {
-    const err = new Error('company_id não corresponde ao assessment');
-    err.status = 400;
-    throw err;
-  }
-
-  const { data: company, error: companyErr } = await supabase
-    .schema('public')
-    .from('companies')
-    .select('owner_user_id')
-    .eq('id', assessment.company_id)
-    .maybeSingle();
-
-  if (companyErr) {
-    throw new Error(`Erro ao buscar company (ensureFullInitiatives): ${companyErr.message}`);
-  }
-
-  if (!company || company.owner_user_id !== userId) {
-    const err = new Error('sem acesso');
-    err.status = 403;
-    throw err;
-  }
-
-  const { data: scores, error: scoresErr } = await supabase
-    .schema('public')
-    .from('scores')
-    .select('commercial, operations, admin_fin, management, overall')
-    .eq('assessment_id', assessmentId)
-    .maybeSingle();
-
-  if (scoresErr) {
-    throw new Error(`Erro ao buscar scores (ensureFullInitiatives): ${scoresErr.message}`);
-  }
-
-  if (!scores) {
-    console.warn('[FULL] scores ausentes ao gerar iniciativas', { assessment_id: assessmentId });
-  }
-
-  const { data: catalog, error: catalogFetchErr } = await supabase
-    .schema('public')
-    .from('full_initiatives_catalog')
-    .select('*')
-    .eq('active', true)
-    .eq('segment', 'ALL')
-    .order('created_at', { ascending: true })
-    .order('id', { ascending: true });
-
-  if (catalogFetchErr) {
-    throw new Error(`Erro ao buscar catálogo (ensureFullInitiatives): ${catalogFetchErr.message}`);
-  }
-
-  if (!catalog || catalog.length === 0) {
-    console.warn('[FULL] catálogo vazio ao gerar iniciativas', { assessment_id: assessmentId });
-    return { inserted: 0 };
-  }
-
-  const sortedCatalog = catalog.sort((a, b) => {
-    const impactOrder = { HIGH: 1, MED: 2, LOW: 3 };
-    const impactDiff = impactOrder[a.impact] - impactOrder[b.impact];
-    if (impactDiff !== 0) return impactDiff;
-
-    const horizonOrder = { CURTO: 1, MEDIO: 2 };
-    const horizonDiff = horizonOrder[a.horizon] - horizonOrder[b.horizon];
-    if (horizonDiff !== 0) return horizonDiff;
-
-    const dateA = new Date(a.created_at || 0);
-    const dateB = new Date(b.created_at || 0);
-    const dateDiff = dateA - dateB;
-    if (dateDiff !== 0) return dateDiff;
-
-    return a.id.localeCompare(b.id);
-  });
-
-  const top12 = sortedCatalog.slice(0, 12);
-
-  if (top12.length < 12) {
-    console.warn('[FULL] catálogo insuficiente para Top-12', {
-      assessment_id: assessmentId,
-      found: top12.length
-    });
-  }
-
-  if (top12.length === 0) {
-    return { inserted: 0 };
-  }
-
-  const inserts = top12.map((initiative, index) => ({
-    assessment_id: assessmentId,
-    initiative_id: initiative.id,
-    rank: index + 1,
-    process: initiative.process
-  }));
-
-  const { error: insertErr } = await supabase
-    .schema('public')
-    .from('full_assessment_initiatives')
-    .insert(inserts);
-
-  if (insertErr) {
-    throw new Error(`Erro ao persistir ranking (ensureFullInitiatives): ${insertErr.message}`);
-  }
-
-  return { inserted: inserts.length };
-};
-
-const buildInitiativesFromRanking = ({ ranking, catalogMap }) => {
-  return (ranking || []).map(rank => {
-    const catalog = (catalogMap && catalogMap[rank.initiative_id]) || {};
-    return {
-      rank: rank.rank,
-      process: rank.process,
-      initiative_id: rank.initiative_id,
-      title: catalog.title || null,
-      impact: catalog.impact || null,
-      horizon: catalog.horizon || null,
-      rationale: catalog.rationale || null,
-      prerequisites: safeArray(catalog.prerequisites_json),
-      dependencies: safeArray(catalog.dependencies_json)
-    };
-  });
-};
 
 /**
  * GET /full/assessments/:id/initiatives
- * Retorna Top 12 de iniciativas FULL determinísticas e persistidas por assessment
+ * Retorna Top 10 de iniciativas FULL determinísticas e persistidas por assessment
  */
-router.get('/full/assessments/:id/initiatives', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/initiatives', requireAuth, async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const userId = req.user.id;
-    const companyId = req.query.company_id;
 
     // A) Validar que assessment existe
     const { data: assessment, error: assessErr } = await supabase
@@ -203,44 +50,7 @@ router.get('/full/assessments/:id/initiatives', requireAuth, requireFullEntitlem
       return res.status(403).json({ error: 'sem acesso' });
     }
 
-    if (companyId && assessment.company_id !== companyId) {
-      return res.status(400).json({ error: 'company_id não corresponde ao assessment' });
-    }
-
-    // B) Contar linhas persistidas
-    const { count, error: countErr } = await supabase
-      .schema('public')
-      .from('full_assessment_initiatives')
-      .select('*', { count: 'exact', head: true })
-      .eq('assessment_id', assessmentId);
-
-    if (countErr) {
-      console.error('Erro ao contar ranking existente:', {
-        assessment_id: assessmentId,
-        company_id: companyId || null,
-        message: countErr.message,
-        detail: countErr.detail || null
-      });
-      return res.status(500).json({ error: 'erro inesperado' });
-    }
-
-    if (Number(count || 0) === 0) {
-      try {
-        await ensureFullInitiatives({ assessmentId, companyId, userId });
-      } catch (ensureErr) {
-        if (ensureErr && ensureErr.status) {
-          return res.status(ensureErr.status).json({ error: ensureErr.message });
-        }
-        console.error('Erro ao garantir iniciativas FULL:', {
-          assessment_id: assessmentId,
-          company_id: companyId || null,
-          message: ensureErr.message
-        });
-        return res.status(500).json({ error: 'erro inesperado' });
-      }
-    }
-
-    // C) Ler ranking persistido (idempotente)
+    // B) Verificar se já existe ranking persistido
     const { data: existingRanking, error: rankErr } = await supabase
       .schema('public')
       .from('full_assessment_initiatives')
@@ -249,52 +59,137 @@ router.get('/full/assessments/:id/initiatives', requireAuth, requireFullEntitlem
       .order('rank', { ascending: true });
 
     if (rankErr) {
-      console.error('Erro ao buscar ranking existente:', {
-        assessment_id: assessmentId,
-        company_id: companyId || null,
-        message: rankErr.message,
-        detail: rankErr.detail || null
-      });
+      console.error('Erro ao buscar ranking existente:', rankErr.message);
       return res.status(500).json({ error: 'erro inesperado' });
     }
 
-    if (!existingRanking || existingRanking.length === 0) {
+    // Se já existe ranking persistido, retornar ele
+    if (existingRanking && existingRanking.length > 0) {
+      // Buscar dados do catálogo para cada iniciativa
+      const initiativeIds = existingRanking.map(r => r.initiative_id);
+      
+      const { data: catalogItems, error: catalogErr } = await supabase
+        .schema('public')
+        .from('full_initiatives_catalog')
+        .select('id, title, rationale, impact, horizon, prerequisites_json, dependencies_json')
+        .in('id', initiativeIds);
+
+      if (catalogErr) {
+        console.error('Erro ao buscar catálogo:', catalogErr.message);
+        return res.status(500).json({ error: 'erro inesperado' });
+      }
+
+      // Montar mapa de catálogo por ID
+      const catalogMap = {};
+      (catalogItems || []).forEach(item => {
+        catalogMap[item.id] = item;
+      });
+
+      // Montar resposta com dados do catálogo
+      const initiatives = existingRanking.map(rank => {
+        const catalog = catalogMap[rank.initiative_id] || {};
+        return {
+          rank: rank.rank,
+          process: rank.process,
+          initiative_id: rank.initiative_id,
+          title: catalog.title || null,
+          impact: catalog.impact || null,
+          horizon: catalog.horizon || null,
+          rationale: catalog.rationale || null,
+          prerequisites: catalog.prerequisites_json ? JSON.parse(JSON.stringify(catalog.prerequisites_json)) : [],
+          dependencies: catalog.dependencies_json ? JSON.parse(JSON.stringify(catalog.dependencies_json)) : []
+        };
+      });
+
       return res.status(200).json({
         assessment_id: assessmentId,
-        initiatives: []
+        initiatives
       });
     }
 
-    const initiativeIds = existingRanking.map(r => r.initiative_id);
-    const { data: catalogItems, error: catalogErr } = await supabase
+    // C) Gerar Top 10 determinístico (se não existe ranking)
+    // Ordenação determinística:
+    // 1) impact (HIGH antes de MED)
+    // 2) horizon (CURTO antes de MEDIO)
+    // 3) created_at asc
+    const { data: catalog, error: catalogFetchErr } = await supabase
       .schema('public')
       .from('full_initiatives_catalog')
-      .select('id, title, rationale, impact, horizon, prerequisites_json, dependencies_json')
-      .in('id', initiativeIds);
+      .select('*')
+      .eq('active', true)
+      .eq('segment', 'ALL')
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true });
 
-    if (catalogErr) {
-      console.error('Erro ao buscar catálogo:', {
-        assessment_id: assessmentId,
-        company_id: companyId || null,
-        message: catalogErr.message,
-        detail: catalogErr.detail || null
-      });
-      console.warn('[FULL] fallback: retornando ranking sem catálogo', {
-        assessment_id: assessmentId,
-        company_id: companyId || null
-      });
-      return res.status(200).json({
-        assessment_id: assessmentId,
-        initiatives: buildInitiativesFromRanking({ ranking: existingRanking, catalogMap: {} })
-      });
+    if (catalogFetchErr) {
+      console.error('Erro ao buscar catálogo:', catalogFetchErr.message);
+      return res.status(500).json({ error: 'erro inesperado' });
     }
 
-    const catalogMap = {};
-    (catalogItems || []).forEach(item => {
-      catalogMap[item.id] = item;
+    if (!catalog || catalog.length === 0) {
+      return res.status(500).json({ error: 'catálogo de iniciativas vazio' });
+    }
+
+    // Ordenação determinística em memória
+    const sortedCatalog = catalog.sort((a, b) => {
+      // 1) impact: HIGH antes de MED
+      const impactOrder = { 'HIGH': 1, 'MED': 2, 'LOW': 3 };
+      const impactDiff = impactOrder[a.impact] - impactOrder[b.impact];
+      if (impactDiff !== 0) return impactDiff;
+
+      // 2) horizon: CURTO antes de MEDIO
+      const horizonOrder = { 'CURTO': 1, 'MEDIO': 2 };
+      const horizonDiff = horizonOrder[a.horizon] - horizonOrder[b.horizon];
+      if (horizonDiff !== 0) return horizonDiff;
+
+      // 3) created_at asc
+      const dateA = new Date(a.created_at || 0);
+      const dateB = new Date(b.created_at || 0);
+      const dateDiff = dateA - dateB;
+      if (dateDiff !== 0) return dateDiff;
+
+      // 4) id asc (desempate final para garantir determinismo)
+      return a.id.localeCompare(b.id);
     });
 
-    const initiatives = buildInitiativesFromRanking({ ranking: existingRanking, catalogMap });
+    // Pegar Top 10
+    const top10 = sortedCatalog.slice(0, 10);
+
+    if (top10.length === 0) {
+      return res.status(500).json({ error: 'não foi possível gerar ranking' });
+    }
+
+    // Persistir Top 10 em full_assessment_initiatives
+    const inserts = top10.map((initiative, index) => ({
+      assessment_id: assessmentId,
+      initiative_id: initiative.id,
+      rank: index + 1,
+      process: initiative.process
+    }));
+
+    const { data: insertedRanking, error: insertErr } = await supabase
+      .schema('public')
+      .from('full_assessment_initiatives')
+      .insert(inserts)
+      .select();
+
+    if (insertErr) {
+      console.error('Erro ao persistir ranking:', insertErr.message);
+      return res.status(500).json({ error: 'erro inesperado' });
+    }
+
+    // Montar resposta
+    const initiatives = top10.map((initiative, index) => ({
+      rank: index + 1,
+      process: initiative.process,
+      initiative_id: initiative.id,
+      title: initiative.title,
+      impact: initiative.impact,
+      horizon: initiative.horizon,
+      rationale: initiative.rationale,
+      prerequisites: initiative.prerequisites_json ? JSON.parse(JSON.stringify(initiative.prerequisites_json)) : [],
+      dependencies: initiative.dependencies_json ? JSON.parse(JSON.stringify(initiative.dependencies_json)) : []
+    }));
 
     return res.status(200).json({
       assessment_id: assessmentId,

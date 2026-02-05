@@ -2,17 +2,10 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import AppShell from '@/components/AppShell';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
-import PageHeader from '@/components/ui/PageHeader';
-import Breadcrumbs from '@/components/ui/Breadcrumbs';
-import Card from '@/components/ui/Card';
-import Button from '@/components/ui/Button';
-import Badge from '@/components/ui/Badge';
-import Alert from '@/components/ui/Alert';
-import Skeleton from '@/components/ui/Skeleton';
 
 interface Recommendation {
   recommendation_id: string;
@@ -43,22 +36,11 @@ function RecommendationsContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const assessmentId = searchParams.get('assessment_id');
-  const companyIdParam = searchParams.get('company_id');
-  const diagnosticoHref = companyIdParam ? `/diagnostico?company_id=${companyIdParam}` : '/diagnostico';
-  const resultsHref = assessmentId ? `/results?assessment_id=${assessmentId}${companyIdParam ? `&company_id=${companyIdParam}` : ''}` : '/results';
-  const recommendationsHref = assessmentId ? `/recommendations?assessment_id=${assessmentId}${companyIdParam ? `&company_id=${companyIdParam}` : ''}` : '/recommendations';
-  const fullDiagnosticHref = assessmentId ? `/full/diagnostic?assessment_id=${assessmentId}` : '/full/diagnostic';
-  const fullInitiativesHref = assessmentId ? `/full/initiatives?assessment_id=${assessmentId}` : '/full/initiatives';
-  const fullSummaryHref = assessmentId ? `/full/summary?assessment_id=${assessmentId}` : '/full/summary';
 
   const [loading, setLoading] = useState(true);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [error, setError] = useState('');
   const [selecting, setSelecting] = useState<string | null>(null);
-  const selectedFreeCount = recommendations.filter((rec) => rec.is_selected_free).length;
-  const selectedProcesses = new Set(
-    recommendations.filter((rec) => rec.is_selected_free).map((rec) => rec.process)
-  );
 
   useEffect(() => {
     if (!assessmentId || !session?.access_token) {
@@ -95,19 +77,6 @@ function RecommendationsContent() {
     }
 
     try {
-      const target = recommendations.find((rec) => rec.recommendation_id === recommendationId);
-      if (!target) {
-        return;
-      }
-      if (selectedFreeCount >= 4) {
-        setError('Limite de 4 ações gratuitas atingido para este diagnóstico.');
-        return;
-      }
-      if (selectedProcesses.has(target.process)) {
-        setError('Você já selecionou uma ação gratuita para este processo.');
-        return;
-      }
-
       setSelecting(recommendationId);
       setError('');
       const freeAction = await apiFetch(
@@ -119,7 +88,7 @@ function RecommendationsContent() {
         session.access_token
       );
       // Navegar para a tela de free action
-      router.push(`/free-action/${freeAction.id}?assessment_id=${assessmentId}${companyIdParam ? `&company_id=${companyIdParam}` : ''}`);
+      router.push(`/free-action/${freeAction.id}`);
     } catch (err: any) {
       if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
@@ -150,48 +119,36 @@ function RecommendationsContent() {
 
   if (loading) {
     return (
-      <AppShell showLogout userEmail={user?.email}>
-        <PageHeader
-          title="Recomendações"
-          subtitle="Ações priorizadas para melhorar seu diagnóstico."
-          breadcrumbs={<Breadcrumbs />}
-        />
-        <Card>
-          <div style={{ display: 'grid', gap: '0.75rem' }}>
-            <Skeleton height="24px" />
-            <Skeleton height="24px" />
-            <Skeleton height="24px" />
-          </div>
-        </Card>
-      </AppShell>
+      <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ textAlign: 'center' }}>Carregando recomendações...</div>
+      </div>
     );
   }
 
   return (
-    <AppShell showLogout userEmail={user?.email}>
-      <PageHeader
-        title="Recomendações"
-        subtitle="Ações priorizadas para melhorar seu diagnóstico."
-        breadcrumbs={<Breadcrumbs />}
-        actions={(
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-            <Button variant="ghost" href={resultsHref}>Voltar para Resultados</Button>
-            <Button variant="ghost" href={diagnosticoHref}>Voltar ao Diagnóstico</Button>
-          </div>
-        )}
-      />
-      <Card style={{ marginBottom: '1.5rem' }}>
-        <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>FULL (teste)</div>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <Button variant="ghost" href={fullDiagnosticHref}>Ver Diagnóstico FULL</Button>
-          <Button variant="ghost" href={fullInitiativesHref}>Ver Iniciativas FULL</Button>
-          <Button variant="ghost" href={fullSummaryHref}>Ver Resumo Executivo FULL</Button>
-        </div>
-      </Card>
+    <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+        Logado como: {user?.email}
+      </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
+        {' | '}
+        <Link href={`/diagnostico?company_id=${searchParams.get('company_id') || ''}`} style={{ color: '#0070f3' }}>
+          Voltar ao Diagnóstico
+        </Link>
+      </div>
+
+      <h1 style={{ marginBottom: '1rem' }}>Recomendações</h1>
 
       {error && (
-        <div style={{ marginBottom: '1rem' }}>
-          <Alert variant="error">{error}</Alert>
+        <div style={{
+          padding: '1rem',
+          backgroundColor: '#f8d7da',
+          color: '#721c24',
+          borderRadius: '4px',
+          marginBottom: '1rem'
+        }}>
+          {error}
         </div>
       )}
 
@@ -203,39 +160,118 @@ function RecommendationsContent() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {recommendations.map((rec) => (
-          <Card key={rec.recommendation_id} style={{ backgroundColor: rec.is_locked ? '#f8f9fa' : '#fff' }}>
+          <div
+            key={rec.recommendation_id}
+            style={{
+              border: '1px solid #ddd',
+              borderRadius: '8px',
+              padding: '1.5rem',
+              backgroundColor: rec.is_locked ? '#f8f9fa' : '#fff',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
               <div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                  <Badge>#{rec.rank}</Badge>
-                  <Badge>{rec.process}</Badge>
+                  <span style={{
+                    backgroundColor: '#0070f3',
+                    color: '#fff',
+                    padding: '0.25rem 0.5rem',
+                    borderRadius: '4px',
+                    fontSize: '0.875rem',
+                    fontWeight: 'bold'
+                  }}>
+                    #{rec.rank}
+                  </span>
+                  <span style={{
+                    backgroundColor: '#e9ecef',
+                    padding: '0.25rem 0.5rem',
+                    borderRadius: '4px',
+                    fontSize: '0.875rem'
+                  }}>
+                    {rec.process}
+                  </span>
                 </div>
                 <h2 style={{ margin: '0 0 0.5rem 0', fontSize: '1.25rem' }}>{rec.title}</h2>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                <Badge variant="warning">Risco: {rec.risk}</Badge>
-                <Badge variant="success">Impacto: {rec.impact}</Badge>
+                <span style={{
+                  backgroundColor: getRiskColor(rec.risk),
+                  color: '#fff',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem'
+                }}>
+                  Risco: {rec.risk}
+                </span>
+                <span style={{
+                  backgroundColor: getImpactColor(rec.impact),
+                  color: '#fff',
+                  padding: '0.25rem 0.5rem',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem'
+                }}>
+                  Impacto: {rec.impact}
+                </span>
               </div>
             </div>
 
             <p style={{ marginBottom: '1rem', color: '#666' }}>{rec.why}</p>
 
-            <div>
-              <Button
-                onClick={() => handleSelectFree(rec.recommendation_id)}
-                disabled={
-                  rec.is_locked ||
-                  selecting === rec.recommendation_id ||
-                  selectedFreeCount >= 4 ||
-                  selectedProcesses.has(rec.process)
-                }
-              >
-                {selecting === rec.recommendation_id ? 'Processando...' : 'Registrar evidência'}
-              </Button>
+            <div style={{ marginBottom: '1rem' }}>
+              {rec.is_selected_free && (
+                <span style={{
+                  backgroundColor: '#28a745',
+                  color: '#fff',
+                  padding: '0.5rem 1rem',
+                  borderRadius: '4px',
+                  fontSize: '0.875rem',
+                  fontWeight: 'bold'
+                }}>
+                  ✓ Selecionada grátis
+                </span>
+              )}
+              {rec.is_free_eligible && !rec.is_selected_free && (
+                <button
+                  onClick={() => handleSelectFree(rec.recommendation_id)}
+                  disabled={selecting === rec.recommendation_id}
+                  style={{
+                    backgroundColor: '#0070f3',
+                    color: '#fff',
+                    border: 'none',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '4px',
+                    cursor: selecting === rec.recommendation_id ? 'not-allowed' : 'pointer',
+                    fontSize: '0.875rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {selecting === rec.recommendation_id ? 'Processando...' : 'Executar grátis'}
+                </button>
+              )}
+              {rec.is_locked && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{ fontSize: '1.5rem' }}>🔒</span>
+                  <span style={{ color: '#666' }}>Bloqueada</span>
+                  <button
+                    style={{
+                      backgroundColor: '#6c757d',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      marginLeft: '0.5rem'
+                    }}
+                  >
+                    CTA Full
+                  </button>
+                </div>
+              )}
             </div>
-          </Card>
+          </div>
         ))}
       </div>
-    </AppShell>
+    </div>
   );
 }

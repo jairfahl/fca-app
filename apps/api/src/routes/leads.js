@@ -46,8 +46,7 @@ router.post('/leads/triage', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'pain inválido. Use: CAIXA, VENDA, OPERACAO, PESSOAS' });
     }
 
-    const horizonValue = String(horizon);
-    if (!validHorizons.has(horizonValue)) {
+    if (!validHorizons.has(horizon)) {
       return res.status(400).json({ error: 'horizon inválido. Use: 30, 60, 90' });
     }
 

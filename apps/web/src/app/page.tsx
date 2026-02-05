@@ -2,39 +2,40 @@
 
 import { useAuth } from '@/lib/auth';
 import Link from 'next/link';
-import AppShell from '@/components/AppShell';
-import PageHeader from '@/components/ui/PageHeader';
-import Breadcrumbs from '@/components/ui/Breadcrumbs';
-import Button from '@/components/ui/Button';
 
 export default function Home() {
   const { user } = useAuth();
 
   return (
-    <AppShell showLogout={Boolean(user)}>
-      <PageHeader
-        title="Diagnóstico rápido de gestão em 3 minutos"
-        subtitle="Notas objetivas por área e recomendações imediatas."
-        breadcrumbs={<Breadcrumbs />}
-      />
-      <ul style={{ margin: '0 0 1.5rem 1.25rem', color: '#374151' }}>
-        <li>Notas 0–10</li>
-        <li>Resumo por área</li>
-        <li>Recomendações imediatas</li>
-      </ul>
-      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+    <main style={{ 
+      padding: '2rem', 
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      maxWidth: '800px',
+      margin: '0 auto'
+    }}>
+      <h1 style={{ marginBottom: '2rem', color: '#333' }}>
+        Mentor Gerencial CNPJ
+      </h1>
+
+      {user && (
+        <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+          Logado como: {user.email}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem' }}>
         {user ? (
           <>
-            <Button href="/onboarding">Começar agora</Button>
-            <Button variant="ghost" href="/logout">Sair</Button>
+            <Link href="/onboarding" style={{ color: '#0070f3' }}>Onboarding</Link>
+            <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
           </>
         ) : (
           <>
-            <Button href="/signup">Começar agora</Button>
-            <Button variant="ghost" href="/login">Já tenho conta</Button>
+            <Link href="/login" style={{ color: '#0070f3' }}>Login</Link>
+            <Link href="/signup" style={{ color: '#0070f3' }}>Criar Conta</Link>
           </>
         )}
       </div>
-    </AppShell>
+    </main>
   );
 }

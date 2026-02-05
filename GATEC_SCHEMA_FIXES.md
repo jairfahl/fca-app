@@ -1,8 +1,5 @@
 # Gate C: Ajustes de Schema para Robustez
 
----
-
-Ultima atualizacao: 2026-02-04.
 ## Análise de Inconsistências
 
 ### Problemas Identificados

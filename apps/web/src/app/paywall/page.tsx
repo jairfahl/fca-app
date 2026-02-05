@@ -2,12 +2,9 @@
 
 import { Suspense } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import AppShell from '@/components/AppShell';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams } from 'next/navigation';
-import PageHeader from '@/components/ui/PageHeader';
-import Breadcrumbs from '@/components/ui/Breadcrumbs';
-import PaywallCard from '@/components/PaywallCard';
+import Link from 'next/link';
 
 export default function PaywallPage() {
   return (
@@ -26,25 +23,36 @@ function PaywallContent() {
   const from = searchParams.get('from');
 
   return (
-    <AppShell showLogout userEmail={user?.email}>
-      <PageHeader
-        title="Planos"
-        subtitle="Compare opções de acesso ao FULL."
-        breadcrumbs={<Breadcrumbs />}
-      />
-
-      <div style={{ maxWidth: '700px' }}>
-        <PaywallCard
-          title="Conteúdo do plano FULL"
-          description="Relatório executivo completo, iniciativas priorizadas e próximos passos para execução."
-          primaryLabel="Liberar FULL (teste)"
-          primaryHref={companyId ? `/full?company_id=${companyId}` : '/full'}
-          secondaryLabel="Voltar"
-          secondaryHref={from === 'diagnostico'
-            ? `/diagnostico?company_id=${companyId || ''}`
-            : (companyId ? `/diagnostico?company_id=${companyId}` : '/diagnostico')}
-        />
+    <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+        Logado como: {user?.email}
       </div>
-    </AppShell>
+      <div style={{ marginBottom: '1rem' }}>
+        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
+        {' | '}
+        {from === 'diagnostico' ? (
+          <Link href={`/diagnostico?company_id=${companyId || ''}`} style={{ color: '#0070f3' }}>Voltar</Link>
+        ) : (
+          <Link href="/diagnostico" style={{ color: '#0070f3' }}>Voltar ao Diagnóstico</Link>
+        )}
+      </div>
+
+      <h1 style={{ marginBottom: '1rem' }}>Planos</h1>
+
+      <div style={{
+        border: '1px solid #ddd',
+        borderRadius: '8px',
+        padding: '2rem',
+        backgroundColor: '#fff'
+      }}>
+        <h2 style={{ marginBottom: '1rem' }}>Plano FULL</h2>
+        <p style={{ marginBottom: '1rem', color: '#666' }}>
+          Acesso completo ao diagnóstico detalhado com análises aprofundadas e recomendações personalizadas.
+        </p>
+        <p style={{ color: '#666', fontSize: '0.875rem' }}>
+          A integração de pagamento será implementada aqui.
+        </p>
+      </div>
+    </div>
   );
 }

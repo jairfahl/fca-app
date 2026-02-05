@@ -255,29 +255,8 @@ router.get('/full/assessments/:id/summary', requireAuth, requireFullEntitlement,
       highlights.push(`${topInitiatives.length} iniciativa(s) priorizada(s) para implementação.`);
     }
 
-    // Limitar a 5 highlights e ordenar determinísticamente
-    const finalHighlights = highlights
-      .slice(0, 5)
-      .sort((a, b) => String(a).localeCompare(String(b)));
-
-    // Ordenações determinísticas finais
-    const sortedCriticalGaps = [...criticalGaps].sort((a, b) => {
-      const typeDiff = String(a.type).localeCompare(String(b.type));
-      if (typeDiff !== 0) return typeDiff;
-      const processDiff = String(a.process).localeCompare(String(b.process));
-      if (processDiff !== 0) return processDiff;
-      return Number(a.score_int) - Number(b.score_int);
-    });
-
-    const sortedTopInitiatives = [...topInitiatives].sort((a, b) => {
-      const rankDiff = Number(a.rank || 0) - Number(b.rank || 0);
-      if (rankDiff !== 0) return rankDiff;
-      return String(a.initiative_id || '').localeCompare(String(b.initiative_id || ''));
-    });
-
-    const sortedDependenciesMap = [...dependenciesMap].sort((a, b) => {
-      return String(a.initiative_id || '').localeCompare(String(b.initiative_id || ''));
-    });
+    // Limitar a 5 highlights
+    const finalHighlights = highlights.slice(0, 5);
 
     // Montar resposta conforme contrato
     return res.status(200).json({
@@ -295,16 +274,17 @@ router.get('/full/assessments/:id/summary', requireAuth, requireFullEntitlement,
         name: companyFull?.name || null
       },
       scores: {
-        commercial: Number(scores.commercial) || 0,
-        operations: Number(scores.operations) || 0,
-        admin_fin: Number(scores.admin_fin) || 0,
-        management: Number(scores.management) || 0,
-        overall: Number(overall) || 0
+        comercial: Number(scores.commercial) || 0,
+        operacoes: Number(scores.operations) || 0,
+        adm_fin: Number(scores.admin_fin) || 0,
+        gestao: Number(scores.management) || 0,
+        overall: overall
       },
-      critical_gaps: sortedCriticalGaps,
-      top_initiatives: sortedTopInitiatives,
-      dependencies_map: sortedDependenciesMap,
-      highlights: finalHighlights
+      critical_gaps: criticalGaps,
+      top_initiatives: topInitiatives,
+      dependencies_map: dependenciesMap,
+      highlights: finalHighlights,
+      generated_at: new Date().toISOString()
     });
 
   } catch (error) {
@@ -408,12 +388,7 @@ router.get('/full/assessments/:id/next-best-actions', requireAuth, requireFullEn
     }
 
     if (!ranking || ranking.length === 0) {
-      return res.status(200).json({
-        ok: true,
-        assessment_id: assessmentId,
-        ready_now: [],
-        blocked_by: []
-      });
+      return res.status(404).json({ error: 'ranking de iniciativas não encontrado' });
     }
 
     // Buscar dados do catálogo para todas as iniciativas
@@ -465,16 +440,12 @@ router.get('/full/assessments/:id/next-best-actions', requireAuth, requireFullEn
         rank: rankItem.rank,
         initiative_id: rankItem.initiative_id,
         code: null, // Não existe no catálogo atual
-        title: catalog.title || null,
-        process: rankItem.process || null
+        title: catalog.title || null
       };
 
       // Se não tem dependências -> ready_now
       if (dependencies.length === 0) {
-        readyNow.push({
-          ...initiativeData,
-          ready_reason: 'NO_DEPENDENCIES'
-        });
+        readyNow.push(initiativeData);
       } else {
         // Se tem dependências -> blocked_by
         // Buscar dados das iniciativas dependentes no catálogo
