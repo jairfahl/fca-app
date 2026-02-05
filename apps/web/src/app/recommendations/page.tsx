@@ -20,6 +20,7 @@ interface Recommendation {
   is_free_eligible: boolean;
   is_selected_free: boolean;
   is_locked: boolean;
+  is_fallback?: boolean;
 }
 
 type ProcessKey = 'COMERCIAL' | 'OPERACOES' | 'ADM_FIN' | 'GESTAO';
@@ -68,7 +69,65 @@ function RecommendationsContent() {
           router.push('/login');
           return;
         }
-        setError(err.message || 'Erro ao carregar recomendações');
+        setError('Não foi possível carregar recomendações. Mostrando sugestões padrão.');
+        setRecommendations([
+          {
+            recommendation_id: 'fallback-COMERCIAL',
+            process: 'COMERCIAL',
+            title: 'Criar rotina semanal de prospecção',
+            why: 'Acelere a entrada de novas oportunidades com rotina simples.',
+            risk: 'MED',
+            impact: 'HIGH',
+            checklist: [],
+            rank: 1,
+            is_free_eligible: false,
+            is_selected_free: false,
+            is_locked: false,
+            is_fallback: true,
+          },
+          {
+            recommendation_id: 'fallback-OPERACOES',
+            process: 'OPERACOES',
+            title: 'Padronizar entrega com checklist e responsável',
+            why: 'Reduza retrabalho e aumente consistência na entrega.',
+            risk: 'MED',
+            impact: 'HIGH',
+            checklist: [],
+            rank: 1,
+            is_free_eligible: false,
+            is_selected_free: false,
+            is_locked: false,
+            is_fallback: true,
+          },
+          {
+            recommendation_id: 'fallback-ADM_FIN',
+            process: 'ADM_FIN',
+            title: 'Organizar fluxo de caixa (D+7)',
+            why: 'Tenha previsibilidade mínima para decisões semanais.',
+            risk: 'HIGH',
+            impact: 'HIGH',
+            checklist: [],
+            rank: 1,
+            is_free_eligible: false,
+            is_selected_free: false,
+            is_locked: false,
+            is_fallback: true,
+          },
+          {
+            recommendation_id: 'fallback-GESTAO',
+            process: 'GESTAO',
+            title: 'Definir metas trimestrais e ritual de acompanhamento',
+            why: 'Direcione a equipe com metas claras e revisão frequente.',
+            risk: 'MED',
+            impact: 'MED',
+            checklist: [],
+            rank: 1,
+            is_free_eligible: false,
+            is_selected_free: false,
+            is_locked: false,
+            is_fallback: true,
+          },
+        ]);
       } finally {
         setLoading(false);
       }
@@ -290,7 +349,7 @@ function RecommendationsContent() {
             })}
           </div>
           <Link
-            href={`/results?assessment_id=${assessmentId}&company_id=${companyId}#light-actions`}
+            href="#light-selection"
             style={{
               display: 'inline-block',
               backgroundColor: '#0070f3',
@@ -325,7 +384,7 @@ function RecommendationsContent() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div id="light-selection" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         {recommendations.map((rec) => (
           <div
             key={rec.recommendation_id}
@@ -394,7 +453,7 @@ function RecommendationsContent() {
                   >
                     {lightSelections?.[rec.process as ProcessKey] === rec.recommendation_id ? 'Selecionada' : 'Selecionar'}
                   </button>
-                  {rec.is_free_eligible && (
+                  {rec.is_free_eligible && !rec.is_fallback ? (
                     <button
                       onClick={() => handleSelectFree(rec.recommendation_id)}
                       disabled={selecting === rec.recommendation_id}
@@ -411,6 +470,11 @@ function RecommendationsContent() {
                     >
                       Registrar evidência
                     </button>
+                  ) : null}
+                  {rec.is_fallback && (
+                    <span style={{ fontSize: '0.85rem', color: '#666' }}>
+                      Evidência indisponível
+                    </span>
                   )}
                 </>
               ) : (
