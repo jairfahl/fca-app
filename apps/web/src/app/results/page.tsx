@@ -118,12 +118,6 @@ function ResultsContent() {
     }
   };
 
-  const fallbackRecommendations: LightRecommendation[] = [
-    { process: 'COMERCIAL', title: 'Criar rotina semanal de prospecção', why: '' },
-    { process: 'OPERACOES', title: 'Padronizar entrega com checklist e responsável', why: '' },
-    { process: 'ADM_FIN', title: 'Organizar fluxo de caixa (D+7)', why: '' },
-    { process: 'GESTAO', title: 'Definir metas trimestrais e ritual de acompanhamento', why: '' },
-  ];
 
   const processLabels: Record<ProcessKey, string> = {
     COMERCIAL: 'Comercial',
@@ -152,7 +146,7 @@ function ResultsContent() {
     }
 
     const loadRecommendations = async () => {
-      let pickedRecommendations: LightRecommendation[] | null = null;
+      let pickedRecommendations: LightRecommendation[] = [];
       try {
         setRecLoading(true);
         setRecError('');
@@ -181,14 +175,12 @@ function ResultsContent() {
           });
 
           const picked = (Object.values(byProcess).filter(Boolean) as LightRecommendation[]);
-          if (picked.length === 4) {
-            pickedRecommendations = picked;
-          }
+          pickedRecommendations = picked;
         }
       } catch {
         setRecError('Não foi possível carregar recomendações rápidas.');
       } finally {
-        setLightRecommendations(pickedRecommendations || fallbackRecommendations);
+        setLightRecommendations(pickedRecommendations);
         setRecLoading(false);
       }
     };
@@ -409,8 +401,7 @@ function ResultsContent() {
             ) : (
               <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
                 {(['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'] as ProcessKey[]).map((process) => {
-                  const rec = (lightRecommendations.length ? lightRecommendations : fallbackRecommendations)
-                    .find((item) => item.process === process);
+                  const rec = lightRecommendations.find((item) => item.process === process);
                   return (
                     <div
                       key={process}
