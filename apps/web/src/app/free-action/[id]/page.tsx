@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 
@@ -37,46 +37,51 @@ function FreeActionContent() {
   const { user, session } = useAuth();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const freeActionId = params.id as string;
+  const companyId = searchParams.get('company_id');
+  const assessmentId = searchParams.get('assessment_id');
 
   const [loading, setLoading] = useState(true);
   const [freeAction, setFreeAction] = useState<FreeAction | null>(null);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [evidenceText, setEvidenceText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
 
-  useEffect(() => {
+  const loadFreeAction = useCallback(async () => {
     if (!freeActionId || !session?.access_token) {
       return;
     }
 
-    const loadFreeAction = async () => {
-      try {
-        setLoading(true);
-        setError('');
-        const data = await apiFetch(
-          `/free-actions/${freeActionId}`,
-          {},
-          session.access_token
-        );
-        setFreeAction(data);
-        if (data.evidence) {
-          setEvidenceText(data.evidence.evidence_text);
-        }
-      } catch (err: any) {
-        if (err instanceof ApiError && err.status === 401) {
-          router.push('/login');
-          return;
-        }
-        setError(err.message || 'Erro ao carregar ação gratuita');
-      } finally {
-        setLoading(false);
+    try {
+      setLoading(true);
+      setLoadError('');
+      setError('');
+      const data = await apiFetch(
+        `/free-actions/${freeActionId}`,
+        {},
+        session.access_token
+      );
+      setFreeAction(data);
+      if (data.evidence) {
+        setEvidenceText(data.evidence.evidence_text);
       }
-    };
-
-    loadFreeAction();
+    } catch (err: any) {
+      if (err instanceof ApiError && err.status === 401) {
+        router.push('/login');
+        return;
+      }
+      setLoadError(err.message || 'Erro ao carregar evidência');
+    } finally {
+      setLoading(false);
+    }
   }, [freeActionId, session?.access_token, router]);
+
+  useEffect(() => {
+    loadFreeAction();
+  }, [loadFreeAction]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -139,7 +144,111 @@ function FreeActionContent() {
     );
   }
 
+  const backToRecommendations = assessmentId
+    ? `/recommendations?assessment_id=${assessmentId}${companyId ? `&company_id=${companyId}` : ''}`
+    : '/recommendations';
+  const backToResults = assessmentId
+    ? `/results?assessment_id=${assessmentId}${companyId ? `&company_id=${companyId}` : ''}`
+    : '/results';
+
   if (!freeAction) {
+    if (loadError) {
+      return (
+        <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
+          <h1 style={{ marginBottom: '0.25rem' }}>Evidência</h1>
+          <p style={{ marginBottom: '0.5rem', color: '#666' }}>
+            Registre o que foi feito e como você comprova.
+          </p>
+          <div style={{
+            padding: '0.75rem',
+            backgroundColor: '#fff3cd',
+            color: '#856404',
+            borderRadius: '6px',
+            marginBottom: '1rem',
+            fontSize: '0.9rem'
+          }}>
+            Não foi possível carregar evidência anterior. Você pode salvar uma nova evidência.
+          </div>
+          <form id="evidence-form-fallback" onSubmit={handleSubmit}>
+            <textarea
+              value={evidenceText}
+              onChange={(e) => setEvidenceText(e.target.value)}
+              placeholder="Ex.: criei planilha X, defini rotina Y, anexei print Z..."
+              rows={6}
+              disabled={submitting}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                fontSize: '0.875rem',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+                marginBottom: '1rem'
+              }}
+            />
+            {error && (
+              <div style={{
+                padding: '0.5rem 0.75rem',
+                backgroundColor: '#f8d7da',
+                color: '#721c24',
+                borderRadius: '4px',
+                marginBottom: '1rem',
+                fontSize: '0.875rem'
+              }}>
+                {error}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button
+                type="submit"
+                disabled={submitting || !evidenceText.trim()}
+                style={{
+                  backgroundColor: submitting || !evidenceText.trim() ? '#9ca3af' : '#0070f3',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '0.75rem 1.25rem',
+                  borderRadius: '8px',
+                  fontWeight: 'bold',
+                  cursor: submitting || !evidenceText.trim() ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {submitting ? 'Salvando...' : 'Salvar evidência'}
+              </button>
+              <Link
+                href={backToRecommendations}
+                style={{
+                  display: 'inline-block',
+                  backgroundColor: '#e9ecef',
+                  color: '#333',
+                  padding: '0.75rem 1.25rem',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: 'bold'
+                }}
+              >
+                Voltar para Recomendações
+              </Link>
+              <Link
+                href={backToResults}
+                style={{
+                  display: 'inline-block',
+                  backgroundColor: '#e9ecef',
+                  color: '#333',
+                  padding: '0.75rem 1.25rem',
+                  borderRadius: '8px',
+                  textDecoration: 'none',
+                  fontWeight: 'bold'
+                }}
+              >
+                Voltar para Resultados
+              </Link>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
     return (
       <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
         <div style={{ color: '#dc3545' }}>Ação gratuita não encontrada.</div>
@@ -151,20 +260,72 @@ function FreeActionContent() {
   const isCompleted = freeAction.status === 'COMPLETED';
   const hasEvidence = freeAction.evidence !== null;
 
+  const backToRecommendationsFromData = freeAction.assessment_id
+    ? `/recommendations?assessment_id=${freeAction.assessment_id}${companyId ? `&company_id=${companyId}` : ''}`
+    : backToRecommendations;
+  const backToResultsFromData = freeAction.assessment_id
+    ? `/results?assessment_id=${freeAction.assessment_id}${companyId ? `&company_id=${companyId}` : ''}`
+    : backToResults;
+
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+      <div style={{ marginBottom: '1rem', color: '#666' }}>
         Logado como: {user?.email}
       </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
-        {' | '}
-        <Link href={`/recommendations?assessment_id=${freeAction.assessment_id}`} style={{ color: '#0070f3' }}>
-          Voltar às Recomendações
+
+      <h1 style={{ marginBottom: '0.25rem' }}>Evidência</h1>
+      <p style={{ marginBottom: '1.5rem', color: '#666' }}>
+        Registre o que foi feito e como você comprova.
+      </p>
+
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        {!isCompleted && (
+          <button
+            type="submit"
+            form="evidence-form"
+            disabled={submitting || !evidenceText.trim()}
+            style={{
+              backgroundColor: submitting || !evidenceText.trim() ? '#9ca3af' : '#0070f3',
+              color: '#fff',
+              border: 'none',
+              padding: '0.75rem 1.25rem',
+              borderRadius: '8px',
+              fontWeight: 'bold',
+              cursor: submitting || !evidenceText.trim() ? 'not-allowed' : 'pointer'
+            }}
+          >
+            {submitting ? 'Salvando...' : 'Salvar evidência'}
+          </button>
+        )}
+        <Link
+          href={backToRecommendationsFromData}
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#e9ecef',
+            color: '#333',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontWeight: 'bold'
+          }}
+        >
+          Voltar para Recomendações
+        </Link>
+        <Link
+          href={backToResultsFromData}
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#e9ecef',
+            color: '#333',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontWeight: 'bold'
+          }}
+        >
+          Voltar para Resultados
         </Link>
       </div>
-
-      <h1 style={{ marginBottom: '1rem' }}>Ação Gratuita</h1>
 
       {error && (
         <div style={{
@@ -248,11 +409,11 @@ function FreeActionContent() {
               {freeAction.evidence!.evidence_text}
             </div>
           ) : (
-            <form onSubmit={handleSubmit}>
+            <form id="evidence-form" onSubmit={handleSubmit}>
               <textarea
                 value={evidenceText}
                 onChange={(e) => setEvidenceText(e.target.value)}
-                placeholder="Descreva a evidência da ação realizada..."
+                placeholder="Ex.: criei planilha X, defini rotina Y, anexei print Z..."
                 rows={6}
                 disabled={submitting || isCompleted}
                 style={{
@@ -266,24 +427,6 @@ function FreeActionContent() {
                   marginBottom: '1rem'
                 }}
               />
-              {!isCompleted && (
-                <button
-                  type="submit"
-                  disabled={submitting || !evidenceText.trim()}
-                  style={{
-                    backgroundColor: submitting ? '#6c757d' : '#0070f3',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '0.75rem 1.5rem',
-                    borderRadius: '4px',
-                    cursor: submitting || !evidenceText.trim() ? 'not-allowed' : 'pointer',
-                    fontSize: '1rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {submitting ? 'Concluindo...' : 'Concluir'}
-                </button>
-              )}
             </form>
           )}
         </div>
