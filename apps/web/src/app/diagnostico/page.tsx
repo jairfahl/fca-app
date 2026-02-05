@@ -246,6 +246,7 @@ function DiagnosticoContent() {
     const stored = window.localStorage.getItem(`light_last_assessment:${companyId}`);
     if (stored) {
       setLastAssessmentId(stored);
+      auditLog('diagnostico_existing_source', { company_id: companyId, source: 'localStorage' });
     }
   }, [companyId]);
 
