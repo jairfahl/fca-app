@@ -46,7 +46,7 @@ function RecommendationsContent() {
   const [error, setError] = useState('');
   const [selecting, setSelecting] = useState<string | null>(null);
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
-  const [lightSelections, setLightSelections] = useState<Record<string, string> | null>(null);
+  const [lightSelections, setLightSelections] = useState<Record<ProcessKey, string> | null>(null);
 
   useEffect(() => {
     if (!assessmentId || !session?.access_token) {
@@ -106,7 +106,7 @@ function RecommendationsContent() {
       }
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        setLightSelections(parsed);
+        setLightSelections(parsed as Record<ProcessKey, string>);
       } else {
         setLightSelections(null);
       }
@@ -146,7 +146,11 @@ function RecommendationsContent() {
         session.access_token
       );
       // Navegar para a tela de free action
-      router.push(`/free-action/${freeAction.id}`);
+      const query = new URLSearchParams();
+      if (companyId) query.set('company_id', companyId);
+      if (assessmentId) query.set('assessment_id', assessmentId);
+      const suffix = query.toString();
+      router.push(`/free-action/${freeAction.id}${suffix ? `?${suffix}` : ''}`);
     } catch (err: any) {
       if (err instanceof ApiError && err.status === 401) {
         router.push('/login');
@@ -374,21 +378,41 @@ function RecommendationsContent() {
 
             <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
               {isLight ? (
-                <button
-                  onClick={() => persistLightSelection(rec.process as ProcessKey, rec.recommendation_id)}
-                  style={{
-                    backgroundColor: lightSelections?.[rec.process as ProcessKey] === rec.recommendation_id ? '#28a745' : '#0070f3',
-                    color: '#fff',
-                    border: 'none',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '6px',
-                    cursor: 'pointer',
-                    fontSize: '0.875rem',
-                    fontWeight: 'bold'
-                  }}
-                >
-                  {lightSelections?.[rec.process as ProcessKey] === rec.recommendation_id ? 'Selecionada' : 'Selecionar'}
-                </button>
+                <>
+                  <button
+                    onClick={() => persistLightSelection(rec.process as ProcessKey, rec.recommendation_id)}
+                    style={{
+                      backgroundColor: lightSelections?.[rec.process as ProcessKey] === rec.recommendation_id ? '#28a745' : '#0070f3',
+                      color: '#fff',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.875rem',
+                      fontWeight: 'bold'
+                    }}
+                  >
+                    {lightSelections?.[rec.process as ProcessKey] === rec.recommendation_id ? 'Selecionada' : 'Selecionar'}
+                  </button>
+                  {rec.is_free_eligible && (
+                    <button
+                      onClick={() => handleSelectFree(rec.recommendation_id)}
+                      disabled={selecting === rec.recommendation_id}
+                      style={{
+                        backgroundColor: '#e9ecef',
+                        color: '#333',
+                        border: 'none',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '6px',
+                        cursor: selecting === rec.recommendation_id ? 'not-allowed' : 'pointer',
+                        fontSize: '0.875rem',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      Registrar evidência
+                    </button>
+                  )}
+                </>
               ) : (
                 <>
                   {rec.is_free_eligible && (
