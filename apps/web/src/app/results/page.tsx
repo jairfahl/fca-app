@@ -485,7 +485,7 @@ function ResultsContent() {
                 fontWeight: 'bold'
               }}
             >
-              Ver recomendações completas
+              Ver recomendações
             </Link>
             {hasFullAccess ? (
               <Link
