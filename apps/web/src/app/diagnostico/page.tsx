@@ -137,8 +137,10 @@ function DiagnosticoContent() {
   const [segment, setSegment] = useState<string | null>(null);
   const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
   const [lastAssessmentId, setLastAssessmentId] = useState<string | null>(null);
+  const [existingCompletedId, setExistingCompletedId] = useState<string | null>(null);
   const hasLoggedEntitlement = useRef(false);
   const hasLoggedRenderState = useRef(false);
+  const hasRedirectedRef = useRef(false);
 
   useEffect(() => {
     if (!session?.access_token) {
@@ -247,6 +249,50 @@ function DiagnosticoContent() {
     }
   }, [companyId]);
 
+  useEffect(() => {
+    if (!lastAssessmentId || !companyId || !session?.access_token) {
+      return;
+    }
+    let cancelled = false;
+
+    const checkExisting = async () => {
+      try {
+        const data = await apiFetch(
+          `/assessments/${lastAssessmentId}`,
+          {},
+          session.access_token
+        );
+        if (cancelled) return;
+        const assessment = data?.assessment;
+        if (
+          assessment &&
+          assessment.company_id === companyId &&
+          assessment.status === 'COMPLETED'
+        ) {
+          setExistingCompletedId(lastAssessmentId);
+          auditLog('diagnostico_existing_light', {
+            company_id: companyId,
+            assessment_id: lastAssessmentId,
+          });
+          if (!hasRedirectedRef.current) {
+            hasRedirectedRef.current = true;
+            setTimeout(() => {
+              router.replace(`/results?assessment_id=${lastAssessmentId}&company_id=${companyId}`);
+            }, 800);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    checkExisting();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastAssessmentId, companyId, session?.access_token, router]);
+
   const handleScoreChange = (key: string, value: string) => {
     setScores((prev) => ({
       ...prev,
@@ -260,6 +306,10 @@ function DiagnosticoContent() {
     if (!companyId || !session?.access_token) {
       setError('company_id é obrigatório');
       setState('error');
+      return;
+    }
+    if (existingCompletedId) {
+      setError('Diagnóstico LIGHT já concluído para esta empresa.');
       return;
     }
 
@@ -402,7 +452,20 @@ function DiagnosticoContent() {
       )}
 
       {state === 'ready' && (
-        <form onSubmit={handleSubmit}>
+        <form id="light-diagnostico-form" onSubmit={handleSubmit}>
+          {existingCompletedId && (
+            <div style={{
+              border: '1px solid #ffeeba',
+              borderRadius: '6px',
+              padding: '0.75rem',
+              backgroundColor: '#fff3cd',
+              color: '#856404',
+              marginBottom: '1rem',
+              fontSize: '0.9rem'
+            }}>
+              Diagnóstico LIGHT já concluído para esta empresa. Redirecionando para o resultado.
+            </div>
+          )}
           <div style={{
             border: '1px solid #ddd',
             borderRadius: '8px',
@@ -545,16 +608,16 @@ function DiagnosticoContent() {
           }}>
             <button
               type="submit"
-              disabled={isSubmitting || missingCount > 0}
+              disabled={isSubmitting || missingCount > 0 || !!existingCompletedId}
               style={{
-                backgroundColor: isSubmitting || missingCount > 0 ? '#9ca3af' : '#0070f3',
+                backgroundColor: isSubmitting || missingCount > 0 || existingCompletedId ? '#9ca3af' : '#0070f3',
                 color: '#fff',
                 border: 'none',
                 padding: '0.75rem 1.5rem',
                 borderRadius: '6px',
                 fontSize: '1rem',
                 fontWeight: 'bold',
-                cursor: isSubmitting || missingCount > 0 ? 'not-allowed' : 'pointer'
+                cursor: isSubmitting || missingCount > 0 || existingCompletedId ? 'not-allowed' : 'pointer'
               }}
             >
               {isSubmitting ? 'Salvando...' : 'Salvar diagnóstico'}
