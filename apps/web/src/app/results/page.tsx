@@ -152,6 +152,7 @@ function ResultsContent() {
     }
 
     const loadRecommendations = async () => {
+      let pickedRecommendations: LightRecommendation[] | null = null;
       try {
         setRecLoading(true);
         setRecError('');
@@ -181,17 +182,15 @@ function ResultsContent() {
 
           const picked = (Object.values(byProcess).filter(Boolean) as LightRecommendation[]);
           if (picked.length === 4) {
-            setLightRecommendations(picked);
-            return;
+            pickedRecommendations = picked;
           }
         }
       } catch {
         setRecError('Não foi possível carregar recomendações rápidas.');
+      } finally {
+        setLightRecommendations(pickedRecommendations || fallbackRecommendations);
+        setRecLoading(false);
       }
-
-      setLightRecommendations(fallbackRecommendations);
-    } finally {
-      setRecLoading(false);
     };
 
     loadRecommendations();
@@ -504,7 +503,7 @@ function ResultsContent() {
               </Link>
             ) : (
               <Link
-                href={`/full?company_id=${resultsCompanyId}`}
+                href={`/paywall?company_id=${resultsCompanyId}`}
                 style={{
                   display: 'inline-block',
                   backgroundColor: '#e9ecef',
