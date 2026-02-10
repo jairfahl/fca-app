@@ -35,6 +35,28 @@ async function validateAssessmentOwnership(assessmentId, userId) {
 }
 
 /**
+ * Helper: Validar ownership de free_action
+ */
+async function validateFreeActionOwnership(freeActionId, userId) {
+  const { data: freeAction, error: faErr } = await supabase
+    .from('assessment_free_actions')
+    .select('id, assessment_id, process')
+    .eq('id', freeActionId)
+    .maybeSingle();
+
+  if (faErr || !freeAction) {
+    return { valid: false, error: 'ação gratuita não encontrada' };
+  }
+
+  const ownership = await validateAssessmentOwnership(freeAction.assessment_id, userId);
+  if (!ownership.valid) {
+    return ownership;
+  }
+
+  return { valid: true, freeAction, assessment: ownership.assessment };
+}
+
+/**
  * Helper: Normalizar category do DB para formato interno
  * Remove acentos, converte para maiúsculas, substitui espaços/hífens por underscore
  */
@@ -127,7 +149,7 @@ async function generateTop10Recommendations(assessmentId) {
   }
 
   if (!allCatalogRecs || allCatalogRecs.length === 0) {
-    throw new Error('Nenhuma recomendação ativa encontrada no catálogo');
+    return [];
   }
 
   // 3. Para cada processo, buscar recomendações compatíveis
@@ -148,14 +170,15 @@ async function generateTop10Recommendations(assessmentId) {
     }
 
     // Filtrar por min_score e max_score (scoreCatalog BETWEEN min_score AND max_score)
-    const compatibleRecs = processRecs.filter(rec => {
+    let compatibleRecs = processRecs.filter(rec => {
       const minScore = Number(rec.min_score) || 0;
       const maxScore = Number(rec.max_score) || 100;
       return scoreCatalog >= minScore && scoreCatalog <= maxScore;
     });
 
     if (compatibleRecs.length === 0) {
-      continue;
+      // Fallback determinístico: usa catálogo do processo mesmo sem match de score
+      compatibleRecs = processRecs;
     }
 
     // Ordenar determinísticamente
@@ -217,7 +240,7 @@ async function generateTop10Recommendations(assessmentId) {
     }
   }
 
-  // Garantir exatamente 10
+  // Garantir no máximo 10
   return recommendations.slice(0, 10);
 }
 
@@ -235,6 +258,24 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
       return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
     }
 
+    const companyId = ownership.assessment.company_id;
+    // Validar entitlement (LIGHT/FULL) ativo para company
+    const { data: entitlement, error: entErr } = await supabase
+      .from('entitlements')
+      .select('plan, status')
+      .eq('user_id', req.user.id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (entErr) {
+      console.error('Erro ao buscar entitlement:', entErr.message);
+      return res.status(500).json({ error: 'erro ao validar entitlement' });
+    }
+
+    if (!entitlement || entitlement.status !== 'ACTIVE' || !['LIGHT', 'FULL'].includes(entitlement.plan)) {
+      return res.status(403).json({ error: 'entitlement inválido' });
+    }
+
     // Verificar se já existe assessment_recommendations_ranked
     const { data: existingRecs, error: existingErr } = await supabase
       .from('assessment_recommendations_ranked')
@@ -250,6 +291,10 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
 
       // Gerar Top 10 (não precisa mais de companySegment)
       const top10 = await generateTop10Recommendations(assessmentId);
+
+      if (top10.length === 0) {
+        return res.json([]);
+      }
 
       // Persistir em transação
       const inserts = top10.map(item => ({
@@ -329,38 +374,103 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
       });
     }
 
-    // Montar resposta (apenas campos que existem no schema real)
-    const response = recommendations.map(item => {
-      if (!item.rec) {
-        // Se não encontrou no catálogo, retornar dados básicos
+    const processOrder = ['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'];
+    const fallbackByProcess = {
+      COMERCIAL: {
+        title: 'Criar rotina semanal de prospecção',
+        why: 'Acelere a entrada de novas oportunidades com rotina simples.',
+        risk_tag: 'RISCO: MED',
+        impact_tag: 'IMPACTO: HIGH',
+      },
+      OPERACOES: {
+        title: 'Padronizar entrega com checklist e responsável',
+        why: 'Reduza retrabalho e aumente consistência na entrega.',
+        risk_tag: 'RISCO: MED',
+        impact_tag: 'IMPACTO: HIGH',
+      },
+      ADM_FIN: {
+        title: 'Organizar fluxo de caixa (D+7)',
+        why: 'Tenha previsibilidade mínima para decisões semanais.',
+        risk_tag: 'RISCO: HIGH',
+        impact_tag: 'IMPACTO: HIGH',
+      },
+      GESTAO: {
+        title: 'Definir metas trimestrais e ritual de acompanhamento',
+        why: 'Direcione a equipe com metas claras e revisão frequente.',
+        risk_tag: 'RISCO: MED',
+        impact_tag: 'IMPACTO: MED',
+      },
+    };
+
+    const sortedRecs = recommendations
+      .filter(item => processOrder.includes(item.process))
+      .sort((a, b) => (a.rank || 0) - (b.rank || 0));
+
+    const byProcess = {};
+    sortedRecs.forEach((item) => {
+      if (!byProcess[item.process]) {
+        byProcess[item.process] = item;
+      }
+    });
+
+    const response = processOrder.map((process, idx) => {
+      const item = byProcess[process];
+      if (!item || !item.rec) {
+        const fallback = fallbackByProcess[process];
         return {
-          recommendation_id: item.recommendation_id,
-          process: item.process,
-          rank: item.rank,
-          title: null,
-          description: null,
-          priority: null
+          recommendation_id: `fallback-${process}`,
+          action_id: `fallback-${process}`,
+          process,
+          rank: idx + 1,
+          title: fallback.title,
+          description: fallback.why,
+          why: fallback.why,
+          risk: fallback.risk_tag.includes('HIGH') ? 'HIGH' : fallback.risk_tag.includes('MED') ? 'MED' : 'LOW',
+          impact: fallback.impact_tag.includes('HIGH') ? 'HIGH' : fallback.impact_tag.includes('MED') ? 'MED' : 'LOW',
+          risk_tag: fallback.risk_tag,
+          impact_tag: fallback.impact_tag,
+          checklist: [],
+          priority: null,
+          is_free_eligible: false,
+          is_selected_free: false,
+          is_locked: false,
+          is_fallback: true,
         };
       }
 
       const isFreeEligible = !freeActionsByProcess[item.process];
       const isSelectedFree = !!freeActionsByRec[item.recommendation_id];
-
+      const why = item.rec.description || 'Ação direta para melhorar o resultado desta área.';
       return {
         recommendation_id: item.recommendation_id,
+        action_id: item.recommendation_id,
         process: item.process,
-        rank: item.rank,
+        rank: idx + 1,
         title: item.rec.title || null,
         description: item.rec.description || null,
+        why,
+        risk: 'MED',
+        impact: 'HIGH',
+        risk_tag: 'RISCO: MED',
+        impact_tag: 'IMPACTO: HIGH',
+        checklist: [],
         priority: item.rec.priority || null,
         is_free_eligible: isFreeEligible,
-        is_selected_free: isSelectedFree
+        is_selected_free: isSelectedFree,
+        is_locked: false,
       };
+    });
+
+    console.log('[LIGHT_RECS]', {
+      assessment_id: assessmentId,
+      company_id: companyId,
+      entitlement: `${entitlement.plan}/${entitlement.status}`,
+      processes: response.map((item) => item.process),
     });
 
     res.json(response);
   } catch (error) {
-    console.error('Erro ao buscar recomendações:', error.message);
+    console.error('Erro ao buscar recomendações:', error);
     res.status(500).json({ error: 'erro inesperado' });
   }
 });
@@ -445,11 +555,15 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
 router.post('/free-actions/:id/evidence', requireAuth, async (req, res) => {
   try {
     const freeActionId = req.params.id;
-    const { evidence_text } = req.body;
+    const { evidence_text, declared_gain_type, declared_gain_note, done_criteria_json } = req.body;
 
     // 1. Validar evidence_text
     if (!evidence_text || typeof evidence_text !== 'string' || evidence_text.trim().length === 0) {
       return res.status(400).json({ error: 'evidence_text é obrigatório' });
+    }
+
+    if (done_criteria_json !== undefined && !Array.isArray(done_criteria_json)) {
+      return res.status(400).json({ error: 'done_criteria_json deve ser uma lista' });
     }
 
     // 2. Buscar action em assessment_free_actions
@@ -504,7 +618,10 @@ router.post('/free-actions/:id/evidence', requireAuth, async (req, res) => {
       .insert({
         free_action_id: freeActionId,
         evidence_text: evidence_text.trim(),
-        created_by_user_id: req.user.id
+        created_by_user_id: req.user.id,
+        declared_gain_type: declared_gain_type ? String(declared_gain_type).trim() : null,
+        declared_gain_note: declared_gain_note ? String(declared_gain_note).trim() : null,
+        done_criteria_json: Array.isArray(done_criteria_json) ? done_criteria_json : null
       })
       .select('id, free_action_id, created_at')
       .single();
@@ -531,6 +648,12 @@ router.post('/free-actions/:id/evidence', requireAuth, async (req, res) => {
       console.error('Erro ao concluir ação gratuita:', updateErr.message);
       return res.status(500).json({ error: 'erro ao concluir ação gratuita' });
     }
+
+    // Bloquear plano 30d (locked = true) quando evidência é registrada
+    await supabase
+      .from('light_action_plans')
+      .update({ locked: true, updated_at: new Date().toISOString() })
+      .eq('free_action_id', freeActionId);
 
     console.log(`EVIDENCE CREATE action_id=${freeActionId} user_id=${req.user.id}`);
 
@@ -581,7 +704,7 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
     const { data: evidence, error: evErr } = await supabase
       .schema('public')
       .from('assessment_free_action_evidences')
-      .select('evidence_text, created_at')
+      .select('evidence_text, created_at, declared_gain_type, declared_gain_note, done_criteria_json')
       .eq('free_action_id', freeActionId)
       .maybeSingle();
 
@@ -600,12 +723,276 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
       },
       evidence: evidence ? {
         evidence_text: evidence.evidence_text,
-        created_at: evidence.created_at
+        created_at: evidence.created_at,
+        declared_gain_type: evidence.declared_gain_type,
+        declared_gain_note: evidence.declared_gain_note,
+        done_criteria_json: evidence.done_criteria_json
       } : null
     });
   } catch (error) {
     console.error('Erro ao buscar ação gratuita:', error.message);
     res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
+ * GET /light/plans?assessment_id=&company_id=
+ * Retorna planos LITE do usuário (com status de progresso/evidência)
+ */
+router.get('/light/plans', requireAuth, async (req, res) => {
+  try {
+    const assessmentId = req.query.assessment_id;
+    const companyId = req.query.company_id;
+
+    if (!assessmentId || !companyId) {
+      return res.status(400).json({ error: 'assessment_id e company_id são obrigatórios' });
+    }
+
+    const ownership = await validateAssessmentOwnership(assessmentId, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    if (ownership.assessment.company_id !== companyId) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    const { data: plans, error: plansErr } = await supabase
+      .from('light_action_plans')
+      .select('id, assessment_id, company_id, process, assessment_free_action_id, free_action_id, step_1, step_2, step_3, owner_name, metric, checkpoint_date, locked, created_at, updated_at')
+      .eq('assessment_id', assessmentId)
+      .eq('company_id', companyId)
+      .eq('owner_user_id', req.user.id);
+
+    if (plansErr) {
+      return res.status(500).json({ error: 'erro ao buscar planos' });
+    }
+
+    const processOrder = ['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'];
+    const orderedPlans = (plans || []).slice().sort((a, b) => {
+      return processOrder.indexOf(a.process) - processOrder.indexOf(b.process);
+    });
+
+    return res.json(orderedPlans);
+  } catch (error) {
+    console.error('Erro ao buscar planos LITE:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
+ * POST /light/plans
+ * Cria/atualiza plano 30d (permitido apenas antes da evidência)
+ */
+router.post('/light/plans', requireAuth, async (req, res) => {
+  try {
+    const {
+      assessment_id,
+      company_id,
+      process,
+      free_action_id,
+      assessment_free_action_id,
+      step_1,
+      step_2,
+      step_3,
+      owner_name,
+      metric,
+      checkpoint_date,
+    } = req.body || {};
+
+    const resolvedFreeActionId = free_action_id || assessment_free_action_id;
+    const required = [assessment_id, company_id, process, resolvedFreeActionId, step_1, step_2, step_3, owner_name, metric, checkpoint_date];
+    if (required.some((value) => !value || (typeof value === 'string' && value.trim().length === 0))) {
+      return res.status(400).json({ error: 'campos obrigatórios ausentes' });
+    }
+
+    if (!['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'].includes(process)) {
+      return res.status(400).json({ error: 'process inválido' });
+    }
+
+    const ownership = await validateAssessmentOwnership(assessment_id, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    if (ownership.assessment.company_id !== company_id) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    const { data: freeAction, error: freeErr } = await supabase
+      .from('assessment_free_actions')
+      .select('id, assessment_id, process')
+      .eq('id', resolvedFreeActionId)
+      .maybeSingle();
+
+    if (freeErr || !freeAction) {
+      return res.status(404).json({ error: 'ação gratuita não encontrada' });
+    }
+
+    if (freeAction.assessment_id !== assessment_id) {
+      return res.status(400).json({ error: 'ação não pertence ao assessment' });
+    }
+
+    if (freeAction.process !== process) {
+      return res.status(400).json({ error: 'process não corresponde à ação' });
+    }
+
+    const { data: existingEvidence, error: evErr } = await supabase
+      .from('assessment_free_action_evidences')
+      .select('id')
+      .eq('free_action_id', resolvedFreeActionId)
+      .maybeSingle();
+
+    if (evErr) {
+      return res.status(500).json({ error: 'erro ao verificar evidência' });
+    }
+
+    const { data: existingPlan, error: planErr } = await supabase
+      .from('light_action_plans')
+      .select('id, owner_user_id, locked')
+      .eq('owner_user_id', req.user.id)
+      .eq('assessment_id', assessment_id)
+      .eq('process', process)
+      .maybeSingle();
+
+    if (planErr) {
+      return res.status(500).json({ error: 'erro ao verificar plano' });
+    }
+
+    if (existingPlan && existingPlan.owner_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    if (existingPlan && existingPlan.locked) {
+      return res.status(409).json({ error: 'plano bloqueado' });
+    }
+
+    if (existingEvidence) {
+      await supabase
+        .from('light_action_plans')
+        .update({ locked: true, updated_at: new Date().toISOString() })
+        .eq('owner_user_id', req.user.id)
+        .eq('assessment_id', assessment_id)
+        .eq('process', process);
+      return res.status(409).json({ error: 'evidência já registrada' });
+    }
+
+    const payload = {
+      assessment_id,
+      company_id,
+      process,
+      free_action_id: resolvedFreeActionId,
+      assessment_free_action_id: resolvedFreeActionId,
+      step_1: String(step_1).trim(),
+      step_2: String(step_2).trim(),
+      step_3: String(step_3).trim(),
+      owner_name: String(owner_name).trim(),
+      metric: String(metric).trim(),
+      checkpoint_date,
+      owner_user_id: req.user.id,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data: savedPlan, error: upsertErr } = await supabase
+      .from('light_action_plans')
+      .upsert(payload, { onConflict: 'owner_user_id,assessment_id,process' })
+      .select()
+      .single();
+
+    if (upsertErr) {
+      return res.status(500).json({ error: 'erro ao salvar plano' });
+    }
+
+    return res.status(existingPlan ? 200 : 201).json(savedPlan);
+  } catch (error) {
+    console.error('Erro ao salvar plano LITE:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
+ * POST /light/progress
+ * Registra progresso declarado (write-once)
+ */
+router.post('/light/progress', requireAuth, async (req, res) => {
+  try {
+    const { free_action_id, done_criteria_json, declared_gain_type, declared_gain_note } = req.body || {};
+
+    if (!free_action_id || !declared_gain_type || !declared_gain_note) {
+      return res.status(400).json({ error: 'campos obrigatórios ausentes' });
+    }
+
+    if (!Array.isArray(done_criteria_json) || done_criteria_json.length === 0) {
+      return res.status(400).json({ error: 'done_criteria_json deve ser uma lista' });
+    }
+
+    const ownership = await validateFreeActionOwnership(free_action_id, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    const { data: existingEvidence, error: evErr } = await supabase
+      .from('assessment_free_action_evidences')
+      .select('id')
+      .eq('free_action_id', free_action_id)
+      .maybeSingle();
+
+    if (evErr) {
+      return res.status(500).json({ error: 'erro ao verificar evidência' });
+    }
+
+    if (existingEvidence) {
+      return res.status(409).json({ error: 'evidência já registrada' });
+    }
+
+    const { data: existingPlan, error: planErr } = await supabase
+      .from('light_action_plans')
+      .select('id, owner_user_id')
+      .eq('free_action_id', free_action_id)
+      .maybeSingle();
+
+    if (planErr) {
+      return res.status(500).json({ error: 'erro ao verificar plano' });
+    }
+
+    if (!existingPlan || existingPlan.owner_user_id !== req.user.id) {
+      return res.status(400).json({ error: 'plano 30d não encontrado' });
+    }
+
+    const { data: existingProgress, error: progressErr } = await supabase
+      .from('light_action_progress')
+      .select('id')
+      .eq('free_action_id', free_action_id)
+      .maybeSingle();
+
+    if (progressErr) {
+      return res.status(500).json({ error: 'erro ao verificar progresso' });
+    }
+
+    if (existingProgress) {
+      return res.status(409).json({ error: 'progresso já registrado' });
+    }
+
+    const { data: savedProgress, error: insertErr } = await supabase
+      .from('light_action_progress')
+      .insert({
+        free_action_id,
+        done_criteria_json,
+        declared_gain_type: String(declared_gain_type).trim(),
+        declared_gain_note: String(declared_gain_note).trim(),
+        created_by_user_id: req.user.id,
+      })
+      .select()
+      .single();
+
+    if (insertErr) {
+      return res.status(500).json({ error: 'erro ao salvar progresso' });
+    }
+
+    return res.status(201).json(savedProgress);
+  } catch (error) {
+    console.error('Erro ao salvar progresso LITE:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
   }
 });
 
