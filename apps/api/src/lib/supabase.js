@@ -2,10 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load env from repo root even when running from apps/api (workspaces)
+// Load env from repo root first (single source of truth)
+const repoRootEnv = path.resolve(__dirname, '../../../../.env');
 const envCandidates = [
-  path.resolve(process.cwd(), '.env'),
-  path.resolve(__dirname, '../../../../.env')
+  repoRootEnv,
+  path.resolve(process.cwd(), '.env')
 ];
 
 let envLoaded = false;
@@ -14,7 +15,7 @@ for (const p of envCandidates) {
     const result = dotenv.config({ path: p });
     if (!result.error) {
       envLoaded = true;
-      console.log(`[supabase.js] Loaded .env from: ${p}`);
+      console.log(`[ENV] API dotenv path: ${p}`);
       break;
     }
   }
@@ -31,6 +32,13 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
   throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configuradas no .env');
+}
+
+try {
+  const url = new URL(SUPABASE_URL);
+  console.log('[ENV] API SUPABASE_URL_HOST=', url.host);
+} catch {
+  console.log('[ENV] API SUPABASE_URL_HOST=INVALID');
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

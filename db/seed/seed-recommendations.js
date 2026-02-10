@@ -1,10 +1,16 @@
-require('dotenv').config();
 const path = require('path');
 const dotenv = require('dotenv');
+const { parse } = require('pg-connection-string');
 
-// Load env from repo root
+// Load env from repo root (single source of truth)
 const envPath = path.resolve(__dirname, '../../../.env');
-dotenv.config({ path: envPath });
+const result = dotenv.config({ path: envPath });
+if (result.error) {
+  console.warn('[ENV] SEED dotenv load failed:', result.error.message);
+} else {
+  console.log('[ENV] SEED dotenv path:', envPath);
+}
+console.log('[ENV] SEED cwd:', process.cwd());
 
 const { createPgPool } = require('../lib/dbSsl');
 
@@ -13,6 +19,15 @@ const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {
   console.error('ERRO: DATABASE_URL não configurada no .env');
   process.exit(1);
+}
+
+try {
+  const parsed = parse(DATABASE_URL);
+  console.log('[ENV] SEED DATABASE_URL_HOST=', parsed.host || 'unknown');
+  console.log('[ENV] SEED DATABASE_URL_DB=', parsed.database || 'unknown');
+  console.log('[ENV] SEED DATABASE_URL_USER=', parsed.user ? `${parsed.user.slice(0, 4)}***` : 'unknown');
+} catch {
+  console.log('[ENV] SEED DATABASE_URL_HOST=INVALID');
 }
 
 // Usar helper que aplica DB_SSL_RELAXED e guardrail de produção
