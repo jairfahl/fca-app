@@ -77,6 +77,58 @@ function normalizeCategory(category) {
   return normalized;
 }
 
+/** Fallback LIGHT por processo (LIGHT executável mesmo sem catálogo) */
+const FALLBACK_BY_PROCESS = {
+  COMERCIAL: {
+    title: 'Criar rotina semanal de prospecção',
+    why: 'Acelere a entrada de novas oportunidades com rotina simples.',
+    risk_tag: 'RISCO: MED',
+    impact_tag: 'IMPACTO: HIGH',
+    checklist: [
+      'Definir dias/horários fixos para prospecção',
+      'Listar metas semanais de novos contatos',
+      'Registrar resultados em planilha ou CRM',
+      'Revisar aprendizados e ajustar abordagem',
+    ],
+  },
+  OPERACOES: {
+    title: 'Padronizar entrega com checklist e responsável',
+    why: 'Reduza retrabalho e aumente consistência na entrega.',
+    risk_tag: 'RISCO: MED',
+    impact_tag: 'IMPACTO: HIGH',
+    checklist: [
+      'Definir as etapas críticas da entrega',
+      'Documentar checklist em papel ou digital',
+      'Atribuir responsável por etapa',
+      'Revisar checklist semanalmente',
+    ],
+  },
+  ADM_FIN: {
+    title: 'Organizar fluxo de caixa (D+7)',
+    why: 'Tenha previsibilidade mínima para decisões semanais.',
+    risk_tag: 'RISCO: HIGH',
+    impact_tag: 'IMPACTO: HIGH',
+    checklist: [
+      'Projetar entradas e saídas dos próximos 7 dias',
+      'Atualizar diariamente com lançamentos reais',
+      'Comparar projetado vs realizado',
+      'Sinalizar alertas se houver gap crítico',
+    ],
+  },
+  GESTAO: {
+    title: 'Definir metas trimestrais e ritual de acompanhamento',
+    why: 'Direcione a equipe com metas claras e revisão frequente.',
+    risk_tag: 'RISCO: MED',
+    impact_tag: 'IMPACTO: MED',
+    checklist: [
+      'Definir 3–5 metas claras para o trimestre',
+      'Comunicar metas à equipe',
+      'Agendar ritual semanal de acompanhamento',
+      'Revisar e ajustar metas conforme resultado',
+    ],
+  },
+};
+
 /**
  * Helper: Mapear category normalizada para process
  */
@@ -272,7 +324,9 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
       return res.status(500).json({ error: 'erro ao validar entitlement' });
     }
 
-    if (!entitlement || entitlement.status !== 'ACTIVE' || !['LIGHT', 'FULL'].includes(entitlement.plan)) {
+    // Se não houver entitlement, tratar como LIGHT/ACTIVE (default)
+    const resolvedEntitlement = entitlement || { plan: 'LIGHT', status: 'ACTIVE' };
+    if (resolvedEntitlement.status !== 'ACTIVE' || !['LIGHT', 'FULL'].includes(resolvedEntitlement.plan)) {
       return res.status(403).json({ error: 'entitlement inválido' });
     }
 
@@ -285,15 +339,33 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
 
     let recommendations = [];
 
-    if (existingErr || !existingRecs || existingRecs.length === 0) {
+    const existingProcesses = new Set((existingRecs || []).map((item) => item.process));
+    const hasAllProcesses = ['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'].every((p) => existingProcesses.has(p));
+
+    if (existingErr || !existingRecs || existingRecs.length === 0 || !hasAllProcesses) {
+      if (!existingErr && existingRecs && existingRecs.length > 0 && !hasAllProcesses) {
+        console.log(`Regerando Top 10 (processos incompletos) para assessment ${assessmentId}`);
+      }
       // Não existe, gerar Top 10
       console.log(`Gerando Top 10 para assessment ${assessmentId}`);
 
       // Gerar Top 10 (não precisa mais de companySegment)
       const top10 = await generateTop10Recommendations(assessmentId);
 
-      if (top10.length === 0) {
+      if (!top10 || top10.length === 0) {
         return res.json([]);
+      }
+
+      // Limpar registros anteriores se existirem (caso de processos incompletos)
+      if (existingRecs && existingRecs.length > 0) {
+        const { error: deleteErr } = await supabase
+          .from('assessment_recommendations_ranked')
+          .delete()
+          .eq('assessment_id', assessmentId);
+        if (deleteErr) {
+          console.error('Erro ao limpar recomendações existentes:', deleteErr.message);
+          return res.status(500).json({ error: 'erro ao limpar recomendações' });
+        }
       }
 
       // Persistir em transação
@@ -306,7 +378,7 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
 
       const { error: insertErr } = await supabase
         .from('assessment_recommendations_ranked')
-        .insert(inserts);
+        .upsert(inserts, { onConflict: 'assessment_id,rank' });
 
       if (insertErr) {
         console.error('Erro ao persistir recomendações:', insertErr.message);
@@ -375,32 +447,7 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
     }
 
     const processOrder = ['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'];
-    const fallbackByProcess = {
-      COMERCIAL: {
-        title: 'Criar rotina semanal de prospecção',
-        why: 'Acelere a entrada de novas oportunidades com rotina simples.',
-        risk_tag: 'RISCO: MED',
-        impact_tag: 'IMPACTO: HIGH',
-      },
-      OPERACOES: {
-        title: 'Padronizar entrega com checklist e responsável',
-        why: 'Reduza retrabalho e aumente consistência na entrega.',
-        risk_tag: 'RISCO: MED',
-        impact_tag: 'IMPACTO: HIGH',
-      },
-      ADM_FIN: {
-        title: 'Organizar fluxo de caixa (D+7)',
-        why: 'Tenha previsibilidade mínima para decisões semanais.',
-        risk_tag: 'RISCO: HIGH',
-        impact_tag: 'IMPACTO: HIGH',
-      },
-      GESTAO: {
-        title: 'Definir metas trimestrais e ritual de acompanhamento',
-        why: 'Direcione a equipe com metas claras e revisão frequente.',
-        risk_tag: 'RISCO: MED',
-        impact_tag: 'IMPACTO: MED',
-      },
-    };
+    const fallbackByProcess = FALLBACK_BY_PROCESS;
 
     const sortedRecs = recommendations
       .filter(item => processOrder.includes(item.process))
@@ -415,8 +462,8 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
 
     const response = processOrder.map((process, idx) => {
       const item = byProcess[process];
-      if (!item || !item.rec) {
-        const fallback = fallbackByProcess[process];
+      const fallback = fallbackByProcess[process];
+      if (!item) {
         return {
           recommendation_id: `fallback-${process}`,
           action_id: `fallback-${process}`,
@@ -429,7 +476,7 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
           impact: fallback.impact_tag.includes('HIGH') ? 'HIGH' : fallback.impact_tag.includes('MED') ? 'MED' : 'LOW',
           risk_tag: fallback.risk_tag,
           impact_tag: fallback.impact_tag,
-          checklist: [],
+          checklist: fallback.checklist || [],
           priority: null,
           is_free_eligible: false,
           is_selected_free: false,
@@ -440,21 +487,23 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
 
       const isFreeEligible = !freeActionsByProcess[item.process];
       const isSelectedFree = !!freeActionsByRec[item.recommendation_id];
-      const why = item.rec.description || 'Ação direta para melhorar o resultado desta área.';
+      const title = item.rec?.title || fallback.title;
+      const description = item.rec?.description || fallback.why;
+      const why = description || 'Ação direta para melhorar o resultado desta área.';
       return {
         recommendation_id: item.recommendation_id,
         action_id: item.recommendation_id,
         process: item.process,
         rank: idx + 1,
-        title: item.rec.title || null,
-        description: item.rec.description || null,
+        title,
+        description,
         why,
         risk: 'MED',
         impact: 'HIGH',
         risk_tag: 'RISCO: MED',
         impact_tag: 'IMPACTO: HIGH',
         checklist: [],
-        priority: item.rec.priority || null,
+        priority: item.rec?.priority || null,
         is_free_eligible: isFreeEligible,
         is_selected_free: isSelectedFree,
         is_locked: false,
@@ -464,7 +513,7 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
     console.log('[LIGHT_RECS]', {
       assessment_id: assessmentId,
       company_id: companyId,
-      entitlement: `${entitlement.plan}/${entitlement.status}`,
+      entitlement: `${resolvedEntitlement.plan}/${resolvedEntitlement.status}`,
       processes: response.map((item) => item.process),
     });
 
@@ -495,24 +544,32 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
       return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
     }
 
-    // Validar que recommendation_id está no Top 10 do assessment
-    const { data: assessmentRec, error: recErr } = await supabase
-      .from('assessment_recommendations_ranked')
-      .select('process')
-      .eq('assessment_id', assessmentId)
-      .eq('recommendation_id', recommendation_id)
-      .single();
+    let process;
+    if (String(recommendation_id).startsWith('fallback-')) {
+      process = String(recommendation_id).replace(/^fallback-/, '');
+      if (!['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'].includes(process)) {
+        return res.status(400).json({ error: 'processo inválido no fallback' });
+      }
+    } else {
+      const { data: assessmentRec, error: recErr } = await supabase
+        .from('assessment_recommendations_ranked')
+        .select('process')
+        .eq('assessment_id', assessmentId)
+        .eq('recommendation_id', recommendation_id)
+        .single();
 
-    if (recErr || !assessmentRec) {
-      return res.status(400).json({ error: 'recomendação não está no Top 10 deste assessment' });
+      if (recErr || !assessmentRec) {
+        return res.status(400).json({ error: 'recomendação não está no Top 10 deste assessment' });
+      }
+      process = assessmentRec.process;
     }
 
-    // Verificar se já existe free_action para esse process
+    // Verificar se já existe free_action para esse process (idempotente)
     const { data: existingFree, error: freeErr } = await supabase
       .from('assessment_free_actions')
-      .select('id')
+      .select('id, assessment_id, recommendation_id, process, status, created_at')
       .eq('assessment_id', assessmentId)
-      .eq('process', assessmentRec.process)
+      .eq('process', process)
       .maybeSingle();
 
     if (freeErr) {
@@ -520,7 +577,16 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
     }
 
     if (existingFree) {
-      return res.status(400).json({ error: `já existe ação gratuita para o processo ${assessmentRec.process}` });
+      const body = {
+        id: existingFree.id,
+        assessment_id: existingFree.assessment_id,
+        company_id: ownership.assessment.company_id,
+        process: existingFree.process,
+        recommendation_id: existingFree.recommendation_id,
+        status: existingFree.status,
+        created_at: existingFree.created_at,
+      };
+      return res.status(200).json(body);
     }
 
     // Inserir free_action
@@ -529,7 +595,7 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
       .insert({
         assessment_id: assessmentId,
         recommendation_id: recommendation_id,
-        process: assessmentRec.process,
+        process,
         status: 'ACTIVE'
       })
       .select()
@@ -540,7 +606,11 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
       return res.status(500).json({ error: 'erro ao criar ação gratuita' });
     }
 
-    res.status(201).json(freeAction);
+    const createdBody = {
+      ...freeAction,
+      company_id: ownership.assessment.company_id,
+    };
+    res.status(201).json(createdBody);
   } catch (error) {
     console.error('Erro ao selecionar ação gratuita:', error.message);
     res.status(500).json({ error: 'erro inesperado' });
@@ -689,15 +759,30 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
       return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
     }
 
-    // Buscar recomendação
-    const { data: recommendation, error: recErr } = await supabase
-      .from('recommendations_catalog')
-      .select('title, description')
-      .eq('id', freeAction.recommendation_id)
-      .single();
+    // Buscar recomendação (catálogo ou fallback LIGHT)
+    let recommendation;
+    if (String(freeAction.recommendation_id).startsWith('fallback-')) {
+      const fallback = FALLBACK_BY_PROCESS[freeAction.process];
+      recommendation = fallback ? {
+        title: fallback.title,
+        description: fallback.why,
+        checklist: fallback.checklist || []
+      } : { title: 'Ação padrão', description: '', checklist: [] };
+    } else {
+      const { data: catalogRec, error: recErr } = await supabase
+        .from('recommendations_catalog')
+        .select('title, description')
+        .eq('id', freeAction.recommendation_id)
+        .single();
 
-    if (recErr) {
-      return res.status(500).json({ error: 'erro ao buscar recomendação' });
+      if (recErr) {
+        return res.status(500).json({ error: 'erro ao buscar recomendação' });
+      }
+      recommendation = {
+        title: catalogRec.title,
+        description: catalogRec.description,
+        checklist: [] // Campo mantido por compatibilidade (schema real não tem checklist_json)
+      };
     }
 
     // Buscar evidência se existir (em assessment_free_action_evidences)
@@ -719,7 +804,7 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
       recommendation: {
         title: recommendation.title,
         description: recommendation.description,
-        checklist: [] // Campo mantido por compatibilidade (schema real não tem checklist_json)
+        checklist: recommendation.checklist || []
       },
       evidence: evidence ? {
         evidence_text: evidence.evidence_text,
@@ -758,6 +843,7 @@ router.get('/light/plans', requireAuth, async (req, res) => {
     }
 
     const { data: plans, error: plansErr } = await supabase
+      .schema('public')
       .from('light_action_plans')
       .select('id, assessment_id, company_id, process, assessment_free_action_id, free_action_id, step_1, step_2, step_3, owner_name, metric, checkpoint_date, locked, created_at, updated_at')
       .eq('assessment_id', assessmentId)
@@ -837,27 +923,46 @@ router.post('/light/plans', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'process não corresponde à ação' });
     }
 
-    const { data: existingEvidence, error: evErr } = await supabase
+    const { data: evidenceRows, error: evErr } = await supabase
+      .schema('public')
       .from('assessment_free_action_evidences')
       .select('id')
       .eq('free_action_id', resolvedFreeActionId)
-      .maybeSingle();
+      .limit(2);
 
     if (evErr) {
+      console.error('[LIGHT_PLANS] Erro ao verificar evidência:', {
+        free_action_id: resolvedFreeActionId,
+        message: evErr.message,
+        code: evErr.code,
+        details: evErr.details,
+        hint: evErr.hint,
+      });
       return res.status(500).json({ error: 'erro ao verificar evidência' });
     }
 
-    const { data: existingPlan, error: planErr } = await supabase
+    const existingEvidence = evidenceRows && evidenceRows.length > 0 ? evidenceRows[0] : null;
+
+    const { data: planRows, error: planErr } = await supabase
+      .schema('public')
       .from('light_action_plans')
       .select('id, owner_user_id, locked')
       .eq('owner_user_id', req.user.id)
       .eq('assessment_id', assessment_id)
       .eq('process', process)
-      .maybeSingle();
+      .limit(2);
 
     if (planErr) {
+      console.error('[LIGHT_PLANS] Erro ao verificar plano:', {
+        assessment_id,
+        process,
+        message: planErr.message,
+        code: planErr.code,
+      });
       return res.status(500).json({ error: 'erro ao verificar plano' });
     }
+
+    const existingPlan = planRows && planRows.length > 0 ? planRows[0] : null;
 
     if (existingPlan && existingPlan.owner_user_id !== req.user.id) {
       return res.status(403).json({ error: 'sem acesso' });
@@ -890,16 +995,24 @@ router.post('/light/plans', requireAuth, async (req, res) => {
       metric: String(metric).trim(),
       checkpoint_date,
       owner_user_id: req.user.id,
+      created_by_user_id: req.user.id,
       updated_at: new Date().toISOString(),
     };
 
     const { data: savedPlan, error: upsertErr } = await supabase
+      .schema('public')
       .from('light_action_plans')
       .upsert(payload, { onConflict: 'owner_user_id,assessment_id,process' })
       .select()
       .single();
 
     if (upsertErr) {
+      console.error('[LIGHT_PLANS] Erro ao salvar plano:', {
+        message: upsertErr.message,
+        code: upsertErr.code,
+        details: upsertErr.details,
+        hint: upsertErr.hint,
+      });
       return res.status(500).json({ error: 'erro ao salvar plano' });
     }
 
