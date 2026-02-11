@@ -1,0 +1,58 @@
+{
+  "COMERCIAL": [
+    { "key": "Q01", "text": "Existe definição clara de quem é o cliente ideal (ICP)?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q02", "text": "Há processo documentado de prospecção e qualificação de leads?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q03", "text": "Existe dono definido para pipeline e conversão?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q04", "text": "Os indicadores comerciais são acompanhados com frequência?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q05", "text": "Existe histórico de relacionamento com clientes centralizado?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q06", "text": "Há rotina de follow-up com leads e oportunidades?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q07", "text": "Quem é responsável por fechar negócios e atingir meta?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q08", "text": "A taxa de conversão é medida e revisada?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q09", "text": "Existe material de venda padronizado e atualizado?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q10", "text": "Há processo de pós-venda e renovação?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q11", "text": "Quem cuida da retenção e da expansão de conta?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q12", "text": "O funil comercial é visualizado e analisado?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] }
+  ],
+  "OPERACOES": [
+    { "key": "Q01", "text": "Existe mapeamento dos processos principais de entrega?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q02", "text": "Há checklist ou procedimento documentado para a operação?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q03", "text": "Existe responsável claro por cada etapa crítica?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q04", "text": "Os prazos e SLA são monitorados?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q05", "text": "Existe padrão de qualidade definido para o produto/serviço?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q06", "text": "Há rotina de revisão e melhoria dos processos?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q07", "text": "Quem resolve problemas operacionais no dia a dia?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q08", "text": "Os indicadores operacionais são acompanhados?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q09", "text": "Existe controle de fornecedores e insumos?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q10", "text": "Há rotina de capacitação da equipe operacional?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q11", "text": "Quem responde por atrasos e retrabalho?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q12", "text": "O tempo de ciclo é medido e otimizado?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] }
+  ],
+  "ADM_FIN": [
+    { "key": "Q01", "text": "Existe controle de entradas e saídas de caixa?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q02", "text": "Há rotina de conciliação bancária e conferência?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q03", "text": "Existe responsável por fechamento e relatórios financeiros?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q04", "text": "O fluxo de caixa é projetado e acompanhado?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q05", "text": "Existe separação entre despesas pessoais e empresariais?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q06", "text": "Há processo de aprovação para gastos acima de certo valor?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q07", "text": "Quem toma decisões de investimento e despesa?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q08", "text": "As obrigações fiscais e trabalhistas são controladas?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q09", "text": "Existe previsão de receita (D+7, D+30)?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q10", "text": "Há rotina de cobrança e acompanhamento de inadimplência?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q11", "text": "Quem cuida da tesouraria e liquidez?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q12", "text": "O resultado é comparado com o planejado?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] }
+  ],
+  "GESTAO": [
+    { "key": "Q01", "text": "Existem metas claras e comunicadas para a equipe?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q02", "text": "Há reunião periódica de acompanhamento de resultados?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q03", "text": "Existe dono por área ou projeto?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q04", "text": "Os indicadores de gestão são acompanhados?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q05", "text": "Existe definição de papéis e responsabilidades?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q06", "text": "Há rotina de feedback e desenvolvimento de pessoas?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q07", "text": "Quem prioriza demandas e resolve conflitos?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q08", "text": "O planejamento é revisado e ajustado?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q09", "text": "Existe canal de comunicação estruturado com a equipe?", "dimension": "EXISTENCIA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q10", "text": "Há ritual de retrospectiva e aprendizado?", "dimension": "ROTINA", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q11", "text": "Quem é responsável por entregar o resultado geral?", "dimension": "DONO", "weight": 1, "segment_applicability": ["C", "I", "S"] },
+    { "key": "Q12", "text": "Os riscos são identificados e mitigados?", "dimension": "CONTROLE", "weight": 1, "segment_applicability": ["C", "I", "S"] }
+  ]
+}

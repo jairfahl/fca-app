@@ -4,10 +4,12 @@
 
 1. Assessment LIGHT concluído (status = COMPLETED)
 2. Scores persistidos na tabela `public.scores`
-3. Seed F3 executado (`npm run db:seed:f3`)
+3. Seed executado (`npm run db:seed` para recommendations_catalog; `npm run db:seed:f3` opcional)
 4. Backend rodando em `http://localhost:3001`
 5. Frontend rodando em `http://localhost:3000`
 6. Token JWT válido do Supabase
+
+**Nota:** O fluxo LIGHT aceita `fallback-*` (fallback-COMERCIAL etc.) quando o catálogo está incompleto.
 
 ---
 
@@ -18,7 +20,7 @@
 ```sql
 -- Substituir <assessment_id> pelo ID real do assessment
 SELECT * 
-FROM public.assessment_recommendations 
+FROM public.assessment_recommendations_ranked 
 WHERE assessment_id = '<assessment_id>' 
 ORDER BY rank;
 ```
@@ -43,7 +45,7 @@ a1b2c3d4-e5f6-7890-abcd-ef1234567890 | rec-002-operacoes-servicos          | OPE
 ```sql
 -- Substituir <assessment_id> pelo ID real do assessment
 SELECT * 
-FROM public.free_actions 
+FROM public.assessment_free_actions 
 WHERE assessment_id = '<assessment_id>';
 ```
 
@@ -66,7 +68,7 @@ fa-002-operacoes                      | a1b2c3d4-e5f6-7890-abcd-ef1234567890| re
 ```sql
 -- Substituir <free_action_id> pelo ID real da free_action
 SELECT * 
-FROM public.free_action_evidences 
+FROM public.assessment_free_action_evidences 
 WHERE free_action_id = '<free_action_id>';
 ```
 
@@ -88,13 +90,13 @@ fa-001-comercial                      | Implementei a ação conforme recomendad
 -- Executar duas vezes e comparar resultados
 -- Primeira chamada
 SELECT recommendation_id, process, rank 
-FROM public.assessment_recommendations 
+FROM public.assessment_recommendations_ranked 
 WHERE assessment_id = '<assessment_id>' 
 ORDER BY rank;
 
 -- Segunda chamada (deve retornar EXATAMENTE o mesmo resultado)
 SELECT recommendation_id, process, rank 
-FROM public.assessment_recommendations 
+FROM public.assessment_recommendations_ranked 
 WHERE assessment_id = '<assessment_id>' 
 ORDER BY rank;
 ```
@@ -124,36 +126,42 @@ ORDER BY rank;
 2. Scroll para mostrar todas as 10 recomendações
 3. Screenshot completo da página
 
-### 2.2 Tentativa de selecionar 2ª do mesmo processo (deve falhar)
+### 2.2 Selecionar mesmo processo duas vezes (idempotente)
 
 **Passos:**
 1. Selecionar primeira recomendação do processo COMERCIAL (rank 1)
-2. Tentar selecionar segunda recomendação do mesmo processo COMERCIAL (rank 4, por exemplo)
-3. Capturar mensagem de erro: "já existe ação gratuita para o processo COMERCIAL"
+2. Chamar novamente o select com outra recomendação do mesmo processo COMERCIAL (rank 4) — ou mesmo recommendation_id
+3. A API retorna **200 OK** com o registro existente (mesmo `id`), não insere duplicata
 
 **cURL para testar:**
 ```bash
-# Primeira seleção (deve funcionar)
+# Primeira seleção (201 Created)
 curl -X POST "http://localhost:3001/assessments/<assessment_id>/free-actions/select" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"recommendation_id": "<rec_id_comercial_1>"}'
 
-# Segunda seleção do mesmo processo (deve falhar com 400)
+# Segunda seleção do mesmo processo (200 OK, idempotente)
 curl -X POST "http://localhost:3001/assessments/<assessment_id>/free-actions/select" \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"recommendation_id": "<rec_id_comercial_2>"}'
 ```
 
-**Resposta esperada (segunda chamada):**
+**Resposta esperada (segunda chamada — 200):**
 ```json
 {
-  "error": "já existe ação gratuita para o processo COMERCIAL"
+  "id": "uuid-da-free-action-existente",
+  "assessment_id": "<assessment_id>",
+  "company_id": "<company_id>",
+  "process": "COMERCIAL",
+  "recommendation_id": "<rec_id_comercial_1>",
+  "status": "ACTIVE",
+  "created_at": "..."
 }
 ```
 
-**Status HTTP:** 400
+**Status HTTP:** 200 (nunca 400 por "já existe")
 
 ### 2.3 Tela Free-Action com evidência registrada + COMPLETED
 
@@ -412,7 +420,7 @@ Segunda chamada:
 -- Verificar created_at de todas as recomendações
 -- Todas devem ter o mesmo timestamp (geradas na primeira chamada)
 SELECT rank, recommendation_id, process, created_at
-FROM public.assessment_recommendations
+FROM public.assessment_recommendations_ranked
 WHERE assessment_id = '<assessment_id>'
 ORDER BY rank;
 ```
@@ -437,11 +445,11 @@ Gerando Top 10 para assessment <assessment_id>
 - [ ] Query SQL retorna máximo 4 free_actions (1 por processo)
 - [ ] Query SQL retorna 1 evidência por free_action (write-once)
 - [ ] Print da tela recommendations mostra 10 itens com status corretos
-- [ ] Print mostra tentativa de selecionar 2ª do mesmo processo falhando
+- [ ] Print mostra segunda chamada retornando 200 (idempotente)
 - [ ] Print da tela free-action mostra COMPLETED + evidência read-only
 - [ ] Print antes/depois do refresh mostra mesmo estado
 - [ ] cURL GET recommendations retorna 200 com 10 itens
-- [ ] cURL POST select retorna 201
+- [ ] cURL POST select retorna 201 (1ª) ou 200 (2ª, idempotente)
 - [ ] cURL POST evidence retorna 201 (primeira) e 409 (segunda)
 - [ ] cURL GET free-action retorna 200 com COMPLETED
 - [ ] Duas chamadas GET recommendations retornam mesmo resultado
@@ -559,14 +567,14 @@ echo "=== TESTE CONCLUÍDO ==="
    - Ranks visíveis (#1 a #10)
    - Botões "Executar grátis" ou badges "Selecionada grátis" ou "Bloqueada"
 
-### 7.2 Tentativa de selecionar 2ª do mesmo processo
+### 7.2 Idempotência do "Abrir plano"
 
-1. Na tela recommendations, identificar duas recomendações do mesmo processo (ex: COMERCIAL)
-2. Clicar em "Executar grátis" na primeira
+1. Na tela recommendations, selecionar 4 ações e salvar
+2. Clicar em "Abrir plano (Comercial)"
 3. Aguardar navegação para `/free-action/<id>`
 4. Voltar para `/recommendations`
-5. Tentar clicar em "Executar grátis" na segunda do mesmo processo
-6. Capturar mensagem de erro: "já existe ação gratuita para o processo COMERCIAL"
+5. Clicar novamente em "Abrir plano (Comercial)"
+6. Verificar que navega para o mesmo `/free-action/<id>` (200 OK, sem erro)
 
 ### 7.3 Tela Free-Action com evidência
 
@@ -597,7 +605,15 @@ echo "=== TESTE CONCLUÍDO ==="
 - As queries SQL devem ser executadas diretamente no banco (Supabase SQL Editor ou psql)
 - Os cURL commands devem ser executados em sequência para manter contexto
 
-## 9. Endpoints Relacionados
+## 9. Script de Teste de Idempotência
+
+```bash
+./scripts/test-free-actions-select-idempotent.sh <ASSESSMENT_ID>
+```
+
+Ver `scripts/FREE_ACTIONS_SELECT_IDEMPOTENT_EVIDENCE.md` para detalhes.
+
+## 10. Endpoints Relacionados
 
 ### F4B - Iniciativas FULL
 

@@ -6,6 +6,10 @@ import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
+import { auditLog } from '@/lib/auditLog';
+import { labels } from '@/lib/uiCopy';
+import { getEntitlement } from '@/lib/entitlement';
+import { assertFullAccess } from '@/lib/fullGuard';
 
 type FullDiagnosticState = 'loading' | 'success' | 'blocked' | 'error' | 'unauthorized' | 'missing_company';
 
@@ -47,6 +51,18 @@ function FullDiagnosticContent() {
         setState('loading');
         setError('');
 
+        const entitlement = await getEntitlement(companyId, session.access_token);
+        if (!assertFullAccess(entitlement)) {
+          setState('blocked');
+          auditLog('full_diagnostic_blocked', {
+            company_id: companyId,
+            plan: entitlement.plan,
+            status: entitlement.status,
+            reason: 'entitlement',
+          });
+          return;
+        }
+
         const data = await apiFetch(
           `/full/diagnostic?company_id=${companyId}`,
           {},
@@ -67,12 +83,16 @@ function FullDiagnosticContent() {
             return;
           }
           if (err.status === 403) {
-            // 403: sem acesso FULL
             setState('blocked');
+            auditLog('full_diagnostic_blocked', {
+              company_id: companyId,
+              reason: '403',
+            });
             return;
           }
         }
-        setError(err.message || 'Erro ao carregar diagnóstico completo');
+        const status = err instanceof ApiError ? err.status : 0;
+        setError((status === 404 || status === 500) ? 'Falha ao carregar diagnóstico FULL' : (err.message || 'Falha ao carregar diagnóstico FULL'));
         setState('error');
       }
     };
@@ -82,16 +102,45 @@ function FullDiagnosticContent() {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
+      <div style={{ marginBottom: '1rem', color: '#666' }}>
         Logado como: {user?.email}
       </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
-        {' | '}
-        <Link href="/diagnostico" style={{ color: '#0070f3' }}>Voltar</Link>
-      </div>
 
-      <h1 style={{ marginBottom: '1rem' }}>Diagnóstico Completo (FULL)</h1>
+      <h1 style={{ marginBottom: '0.25rem' }}>Diagnóstico Completo (FULL)</h1>
+      <p style={{ marginBottom: '1.5rem', color: '#666' }}>
+        Relatório detalhado com os dados completos do diagnóstico.
+      </p>
+
+      <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '2rem' }}>
+        <Link
+          href={companyId ? `/full?company_id=${companyId}` : '/full'}
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#0070f3',
+            color: '#fff',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontWeight: 'bold'
+          }}
+        >
+          Voltar ao FULL
+        </Link>
+        <Link
+          href={companyId ? `/diagnostico?company_id=${companyId}` : '/diagnostico'}
+          style={{
+            display: 'inline-block',
+            backgroundColor: '#e9ecef',
+            color: '#333',
+            padding: '0.75rem 1.25rem',
+            borderRadius: '8px',
+            textDecoration: 'none',
+            fontWeight: 'bold'
+          }}
+        >
+          Voltar ao diagnóstico
+        </Link>
+      </div>
 
       {state === 'loading' && (
         <div style={{ padding: '2rem', textAlign: 'center' }}>
@@ -108,10 +157,7 @@ function FullDiagnosticContent() {
           color: '#721c24',
           textAlign: 'center'
         }}>
-          <p>company_id ausente</p>
-          <p style={{ marginTop: '1rem', fontSize: '0.875rem' }}>
-            Acesse esta página com o parâmetro: <code>?company_id=&lt;uuid&gt;</code>
-          </p>
+          <p>{labels.missingCompany}</p>
         </div>
       )}
 
@@ -137,7 +183,7 @@ function FullDiagnosticContent() {
           backgroundColor: '#f8d7da',
           color: '#721c24'
         }}>
-          <p><strong>Erro:</strong> {error || 'Erro ao carregar diagnóstico completo'}</p>
+          <p><strong>Erro:</strong> {error || 'Falha ao carregar diagnóstico FULL'}</p>
         </div>
       )}
 
@@ -149,9 +195,18 @@ function FullDiagnosticContent() {
             padding: '1rem',
             backgroundColor: '#d4edda',
             color: '#155724',
-            marginBottom: '1.5rem'
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
           }}>
-            <strong>✓ Diagnóstico completo carregado com sucesso</strong>
+            <span style={{ fontSize: '1.25rem' }}>✓</span>
+            <div>
+              <strong>Diagnóstico completo carregado com sucesso</strong>
+              <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.8 }}>
+                Tipo: Diagnóstico FULL
+              </div>
+            </div>
           </div>
 
           <div style={{
@@ -211,7 +266,7 @@ function FullDiagnosticContent() {
               e.currentTarget.style.backgroundColor = '#0070f3';
             }}
           >
-            Ver planos
+            Ver plano FULL
           </Link>
         </div>
       )}

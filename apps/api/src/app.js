@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 
 const pingRoutes = require('./routes/ping');
+const diagnosticRoutes = require('./routes/diagnostic');
 const companiesRoutes = require('./routes/companies');
 const assessmentsRoutes = require('./routes/assessments');
 const f3Routes = require('./routes/f3');
@@ -9,6 +10,7 @@ const f4Routes = require('./routes/f4');
 const f4bRoutes = require('./routes/f4b');
 const gateCRoutes = require('./routes/gateC');
 const leadsRoutes = require('./routes/leads');
+const fullRoutes = require('./routes/full');
 
 const app = express();
 
@@ -45,6 +47,7 @@ app.use(express.json());
 
 // Rotas
 app.use('/', pingRoutes);
+app.use('/', diagnosticRoutes);
 app.use('/companies', companiesRoutes);
 app.use('/assessments', assessmentsRoutes);
 app.use('/', f3Routes);
@@ -52,6 +55,7 @@ app.use('/', f4Routes);
 app.use('/', f4bRoutes);
 app.use('/', gateCRoutes);
 app.use('/', leadsRoutes);
+app.use('/', fullRoutes);
 console.log('ROUTES OK: f4 mounted');
 console.log('ROUTES OK: f4b mounted');
 console.log('ROUTES OK: gateC mounted');

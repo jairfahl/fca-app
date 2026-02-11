@@ -77,6 +77,20 @@ function normalizeCategory(category) {
   return normalized;
 }
 
+/** Whitelist de processKey (lowercase) -> process (uppercase) */
+const PROCESS_KEY_MAP = {
+  comercial: 'COMERCIAL',
+  operacoes: 'OPERACOES',
+  adm_fin: 'ADM_FIN',
+  gestao: 'GESTAO',
+};
+
+function normalizeProcessKey(processKey) {
+  if (!processKey || typeof processKey !== 'string') return null;
+  const key = String(processKey).toLowerCase().trim();
+  return PROCESS_KEY_MAP[key] || null;
+}
+
 /** Fallback LIGHT por processo (LIGHT executável mesmo sem catálogo) */
 const FALLBACK_BY_PROCESS = {
   COMERCIAL: {
@@ -585,6 +599,10 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
         recommendation_id: existingFree.recommendation_id,
         status: existingFree.status,
         created_at: existingFree.created_at,
+        created: false,
+        already_exists: true,
+        plan_id: existingFree.id,
+        message: 'Plano já existe para este processo.',
       };
       return res.status(200).json(body);
     }
@@ -609,6 +627,9 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
     const createdBody = {
       ...freeAction,
       company_id: ownership.assessment.company_id,
+      created: true,
+      already_exists: false,
+      plan_id: freeAction.id,
     };
     res.status(201).json(createdBody);
   } catch (error) {
@@ -821,6 +842,250 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /light/plans/status?assessment_id=&company_id=
+ * Status agregado dos 4 planos (mapa por processo)
+ */
+router.get('/light/plans/status', requireAuth, async (req, res) => {
+  try {
+    const assessmentId = req.query.assessment_id;
+    const companyId = req.query.company_id;
+
+    if (!assessmentId || !companyId) {
+      return res.status(400).json({ error: 'assessment_id e company_id são obrigatórios' });
+    }
+
+    const ownership = await validateAssessmentOwnership(assessmentId, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    if (ownership.assessment.company_id !== companyId) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    const processes = ['COMERCIAL', 'OPERACOES', 'ADM_FIN', 'GESTAO'];
+    const keyMap = { COMERCIAL: 'comercial', OPERACOES: 'operacoes', ADM_FIN: 'adm_fin', GESTAO: 'gestao' };
+    const result = { comercial: {}, operacoes: {}, adm_fin: {}, gestao: {} };
+
+    for (const process of processes) {
+      const { data: freeAction, error: faErr } = await supabase
+        .from('assessment_free_actions')
+        .select('id, assessment_id, process, created_at')
+        .eq('assessment_id', assessmentId)
+        .eq('process', process)
+        .maybeSingle();
+
+      if (faErr || !freeAction) {
+        result[keyMap[process]] = { exists: false };
+        continue;
+      }
+
+      const { data: planRow } = await supabase
+        .schema('public')
+        .from('light_action_plans')
+        .select('id, updated_at, locked')
+        .eq('owner_user_id', req.user.id)
+        .eq('assessment_id', assessmentId)
+        .eq('process', process)
+        .maybeSingle();
+
+      const { data: evidenceRows } = await supabase
+        .schema('public')
+        .from('assessment_free_action_evidences')
+        .select('id')
+        .eq('free_action_id', freeAction.id)
+        .limit(1);
+
+      const completed = evidenceRows && evidenceRows.length > 0;
+      const hasPlan = !!planRow;
+
+      result[keyMap[process]] = {
+        exists: true,
+        plan_id: freeAction.id,
+        completed,
+        has_plan_30d: hasPlan,
+        updated_at: planRow?.updated_at || freeAction.created_at,
+      };
+    }
+
+    const allDone = processes.every((p) => result[keyMap[p]].exists && result[keyMap[p]].has_plan_30d);
+
+    return res.json({
+      by_process: result,
+      all_done: allDone,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar status agregado:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
+ * GET /light/plans/:processKey/status?assessment_id=&company_id=
+ * Status do plano por processo (existe?, plan_id, completed, updated_at)
+ */
+router.get('/light/plans/:processKey/status', requireAuth, async (req, res) => {
+  try {
+    const processKey = req.params.processKey;
+    const assessmentId = req.query.assessment_id;
+    const companyId = req.query.company_id;
+
+    const process = normalizeProcessKey(processKey);
+    if (!process) {
+      return res.status(400).json({ error: 'processKey inválido. Use: comercial, operacoes, adm_fin, gestao' });
+    }
+
+    if (!assessmentId || !companyId) {
+      return res.status(400).json({ error: 'assessment_id e company_id são obrigatórios' });
+    }
+
+    const ownership = await validateAssessmentOwnership(assessmentId, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    if (ownership.assessment.company_id !== companyId) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    const { data: freeAction, error: faErr } = await supabase
+      .from('assessment_free_actions')
+      .select('id, assessment_id, process, created_at')
+      .eq('assessment_id', assessmentId)
+      .eq('process', process)
+      .maybeSingle();
+
+    if (faErr) {
+      return res.status(500).json({ error: 'erro ao verificar plano' });
+    }
+
+    if (!freeAction) {
+      return res.json({ exists: false });
+    }
+
+    const { data: evidenceRows } = await supabase
+      .schema('public')
+      .from('assessment_free_action_evidences')
+      .select('id, created_at')
+      .eq('free_action_id', freeAction.id)
+      .limit(1);
+
+    const hasEvidence = evidenceRows && evidenceRows.length > 0;
+    const evidence = hasEvidence ? evidenceRows[0] : null;
+
+    const { data: planRow } = await supabase
+      .schema('public')
+      .from('light_action_plans')
+      .select('updated_at')
+      .eq('owner_user_id', req.user.id)
+      .eq('assessment_id', assessmentId)
+      .eq('process', process)
+      .maybeSingle();
+
+    const updatedAt = planRow?.updated_at || evidence?.created_at || freeAction.created_at;
+
+    return res.json({
+      exists: true,
+      plan_id: freeAction.id,
+      completed: hasEvidence,
+      updated_at: updatedAt || null,
+    });
+  } catch (error) {
+    console.error('Erro ao buscar status do plano:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
+ * GET /light/plans/:processKey?assessment_id=&company_id=
+ * Retorna o plano salvo para o processo (free_action + light_action_plan)
+ */
+router.get('/light/plans/:processKey', requireAuth, async (req, res) => {
+  try {
+    const processKey = req.params.processKey;
+    const assessmentId = req.query.assessment_id;
+    const companyId = req.query.company_id;
+
+    const process = normalizeProcessKey(processKey);
+    if (!process) {
+      return res.status(400).json({ error: 'processKey inválido. Use: comercial, operacoes, adm_fin, gestao' });
+    }
+
+    if (!assessmentId || !companyId) {
+      return res.status(400).json({ error: 'assessment_id e company_id são obrigatórios' });
+    }
+
+    const ownership = await validateAssessmentOwnership(assessmentId, req.user.id);
+    if (!ownership.valid) {
+      return res.status(ownership.error === 'sem acesso' ? 403 : 404).json({ error: ownership.error });
+    }
+
+    if (ownership.assessment.company_id !== companyId) {
+      return res.status(403).json({ error: 'sem acesso' });
+    }
+
+    const { data: freeAction, error: faErr } = await supabase
+      .from('assessment_free_actions')
+      .select('id, assessment_id, process, recommendation_id, status, created_at')
+      .eq('assessment_id', assessmentId)
+      .eq('process', process)
+      .maybeSingle();
+
+    if (faErr) {
+      return res.status(500).json({ error: 'erro ao buscar plano' });
+    }
+
+    if (!freeAction) {
+      return res.status(404).json({ error: 'plano não encontrado para este processo' });
+    }
+
+    const { data: planRow } = await supabase
+      .schema('public')
+      .from('light_action_plans')
+      .select('*')
+      .eq('owner_user_id', req.user.id)
+      .eq('assessment_id', assessmentId)
+      .eq('process', process)
+      .maybeSingle();
+
+    const { data: evidenceRows } = await supabase
+      .schema('public')
+      .from('assessment_free_action_evidences')
+      .select('id, evidence_text, created_at, declared_gain_type, declared_gain_note, done_criteria_json')
+      .eq('free_action_id', freeAction.id)
+      .limit(1);
+
+    const evidence = evidenceRows && evidenceRows.length > 0 ? evidenceRows[0] : null;
+
+    const response = {
+      plan_id: freeAction.id,
+      free_action: {
+        id: freeAction.id,
+        assessment_id: freeAction.assessment_id,
+        process: freeAction.process,
+        recommendation_id: freeAction.recommendation_id,
+        status: freeAction.status,
+        created_at: freeAction.created_at,
+      },
+      light_plan: planRow || null,
+      evidence: evidence ? {
+        evidence_text: evidence.evidence_text,
+        created_at: evidence.created_at,
+        declared_gain_type: evidence.declared_gain_type,
+        declared_gain_note: evidence.declared_gain_note,
+        done_criteria_json: evidence.done_criteria_json,
+      } : null,
+      completed: !!evidence,
+    };
+
+    return res.json(response);
+  } catch (error) {
+    console.error('Erro ao buscar plano:', error.message);
+    return res.status(500).json({ error: 'erro inesperado' });
+  }
+});
+
+/**
  * GET /light/plans?assessment_id=&company_id=
  * Retorna planos LITE do usuário (com status de progresso/evidência)
  */
@@ -946,7 +1211,7 @@ router.post('/light/plans', requireAuth, async (req, res) => {
     const { data: planRows, error: planErr } = await supabase
       .schema('public')
       .from('light_action_plans')
-      .select('id, owner_user_id, locked')
+      .select('id, owner_user_id, locked, free_action_id')
       .eq('owner_user_id', req.user.id)
       .eq('assessment_id', assessment_id)
       .eq('process', process)
@@ -969,7 +1234,14 @@ router.post('/light/plans', requireAuth, async (req, res) => {
     }
 
     if (existingPlan && existingPlan.locked) {
-      return res.status(409).json({ error: 'plano bloqueado' });
+      const planId = existingPlan.free_action_id || resolvedFreeActionId;
+      return res.status(200).json({
+        created: false,
+        already_exists: true,
+        plan_id: planId,
+        message: 'Plano já concluído para este processo.',
+        locked: true,
+      });
     }
 
     if (existingEvidence) {
@@ -979,7 +1251,13 @@ router.post('/light/plans', requireAuth, async (req, res) => {
         .eq('owner_user_id', req.user.id)
         .eq('assessment_id', assessment_id)
         .eq('process', process);
-      return res.status(409).json({ error: 'evidência já registrada' });
+      return res.status(200).json({
+        created: false,
+        already_exists: true,
+        plan_id: resolvedFreeActionId,
+        message: 'Plano já concluído para este processo.',
+        completed: true,
+      });
     }
 
     const payload = {
@@ -1016,7 +1294,11 @@ router.post('/light/plans', requireAuth, async (req, res) => {
       return res.status(500).json({ error: 'erro ao salvar plano' });
     }
 
-    return res.status(existingPlan ? 200 : 201).json(savedPlan);
+    const isUpdate = !!existingPlan;
+    const body = isUpdate
+      ? { ...savedPlan, created: false, already_exists: true, plan_id: savedPlan.id, message: 'Plano já existente. Atualizado.' }
+      : { ...savedPlan, created: true, already_exists: false, plan_id: savedPlan.id };
+    return res.status(isUpdate ? 200 : 201).json(body);
   } catch (error) {
     console.error('Erro ao salvar plano LITE:', error.message);
     return res.status(500).json({ error: 'erro inesperado' });

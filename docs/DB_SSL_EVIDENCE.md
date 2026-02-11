@@ -116,6 +116,6 @@ DB CHECK FAIL
 
 ## Data de Geração
 
-- **Data:** [Preencher]
-- **Ambiente:** [Preencher: local/CI]
-- **Versão:** [Preencher: git commit hash]
+- **Data:** 2026-02-05
+- **Ambiente:** local
+- **Versão:** Atualizado conforme docs/DB_SSL.md

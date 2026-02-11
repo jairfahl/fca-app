@@ -1,0 +1,14 @@
+[
+  { "process_key": "COMERCIAL", "band": "LOW", "recommendation_key": "rec-com-low", "title": "Estruturar prospecção e pipeline Comercial (LOW)", "owner_language_explanation": "Recomendação para banda LOW no processo Comercial." },
+  { "process_key": "COMERCIAL", "band": "MEDIUM", "recommendation_key": "rec-com-medium", "title": "Estruturar prospecção e pipeline Comercial (MEDIUM)", "owner_language_explanation": "Recomendação para banda MEDIUM no processo Comercial." },
+  { "process_key": "COMERCIAL", "band": "HIGH", "recommendation_key": "rec-com-high", "title": "Estruturar prospecção e pipeline Comercial (HIGH)", "owner_language_explanation": "Recomendação para banda HIGH no processo Comercial." },
+  { "process_key": "OPERACOES", "band": "LOW", "recommendation_key": "rec-ops-low", "title": "Padronizar operação e entrega (LOW)", "owner_language_explanation": "Recomendação para banda LOW no processo Operações." },
+  { "process_key": "OPERACOES", "band": "MEDIUM", "recommendation_key": "rec-ops-medium", "title": "Padronizar operação e entrega (MEDIUM)", "owner_language_explanation": "Recomendação para banda MEDIUM no processo Operações." },
+  { "process_key": "OPERACOES", "band": "HIGH", "recommendation_key": "rec-ops-high", "title": "Padronizar operação e entrega (HIGH)", "owner_language_explanation": "Recomendação para banda HIGH no processo Operações." },
+  { "process_key": "ADM_FIN", "band": "LOW", "recommendation_key": "rec-adm-low", "title": "Organizar fluxo de caixa e controles (LOW)", "owner_language_explanation": "Recomendação para banda LOW no processo Adm/Fin." },
+  { "process_key": "ADM_FIN", "band": "MEDIUM", "recommendation_key": "rec-adm-medium", "title": "Organizar fluxo de caixa e controles (MEDIUM)", "owner_language_explanation": "Recomendação para banda MEDIUM no processo Adm/Fin." },
+  { "process_key": "ADM_FIN", "band": "HIGH", "recommendation_key": "rec-adm-high", "title": "Organizar fluxo de caixa e controles (HIGH)", "owner_language_explanation": "Recomendação para banda HIGH no processo Adm/Fin." },
+  { "process_key": "GESTAO", "band": "LOW", "recommendation_key": "rec-ges-low", "title": "Definir metas e acompanhamento (LOW)", "owner_language_explanation": "Recomendação para banda LOW no processo Gestão." },
+  { "process_key": "GESTAO", "band": "MEDIUM", "recommendation_key": "rec-ges-medium", "title": "Definir metas e acompanhamento (MEDIUM)", "owner_language_explanation": "Recomendação para banda MEDIUM no processo Gestão." },
+  { "process_key": "GESTAO", "band": "HIGH", "recommendation_key": "rec-ges-high", "title": "Definir metas e acompanhamento (HIGH)", "owner_language_explanation": "Recomendação para banda HIGH no processo Gestão." }
+]

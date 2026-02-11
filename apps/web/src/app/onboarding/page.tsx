@@ -27,6 +27,11 @@ function OnboardingContent() {
   // Trava anti-loop: useRef não causa re-render, então não dispara novo effect
   const hasCheckedRef = useRef(false);
 
+  const redirectToLight = (companyId: string) => {
+    // AUDIT(LITE): onboarding must always land on /diagnostico for LIGHT users.
+    router.push(`/diagnostico?company_id=${companyId}`);
+  };
+
   // Verificar se já existe company ao carregar (UMA VEZ APENAS)
   // Trava anti-loop: usar apenas primitivos nas dependências e useRef para flag
   useEffect(() => {
@@ -48,8 +53,8 @@ function OnboardingContent() {
         const companies = await apiFetch('/companies', {}, session.access_token);
         
         if (companies && companies.length > 0) {
-          // Já existe company, redirecionar para diagnóstico
-          router.push(`/diagnostico?company_id=${companies[0].id}`);
+          // Já existe company, redirecionar para diagnóstico LIGHT
+          redirectToLight(companies[0].id);
           return;
         }
         
@@ -100,8 +105,8 @@ function OnboardingContent() {
         session.access_token
       );
 
-      // Redirecionar para diagnóstico com company_id
-      router.push(`/diagnostico?company_id=${company.id}`);
+      // Redirecionar para diagnóstico LIGHT
+      redirectToLight(company.id);
     } catch (err: any) {
       setError(err.message || 'Erro ao criar empresa');
       setSaving(false);

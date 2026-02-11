@@ -200,5 +200,7 @@ Os scripts salvam respostas em `/tmp/`:
 
 - `README.md`: Visão geral do projeto e todos os endpoints
 - `F4_DOCUMENTATION.md`: Documentação completa do F4, F4B e Gate C
+- `F3_CURL_EXAMPLES.md`: Exemplos de cURL para F3
 - `GATEC_NEXT_BEST_ACTIONS.md`: Documentação do endpoint next-best-actions
 - `GATEC_SCHEMA_FIXES.md`: Documentação dos ajustes de schema para robustez
+- `scripts/FREE_ACTIONS_SELECT_IDEMPOTENT_EVIDENCE.md`: Evidência da idempotência do select F3

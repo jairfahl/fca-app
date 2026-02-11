@@ -4,6 +4,8 @@
 
 ✅ **Arquivo criado:** `db/migrations/009_d1_leads_triage.sql`
 
+**Nota:** Migrações 010–013 foram adicionadas posteriormente (light_action_plans, fallbacks, evidências).
+
 ## Erro de Conectividade
 
 A migração não pôde ser aplicada devido a erro de conectividade:

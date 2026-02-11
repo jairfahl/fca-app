@@ -58,7 +58,7 @@ export async function apiFetchAuth(
     let errorMessage = 'Erro na requisição';
     try {
       const errorData = await response.json();
-      errorMessage = errorData.error || errorMessage;
+      errorMessage = errorData.message_user || errorData.error || errorMessage;
     } catch {
       errorMessage = `Erro ${response.status}: ${response.statusText}`;
     }

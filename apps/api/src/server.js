@@ -56,6 +56,12 @@ function dumpDbEnv() {
     passwordLen: parsed.password ? String(parsed.password).length : 0
   });
 
+  // Fingerprint para evidência operacional (evitar dois bancos / dois .env)
+  const dbFingerprint = [parsed.host || '', parsed.database || ''].filter(Boolean).join('@') || 'unknown';
+  const supabaseUrl = process.env.SUPABASE_URL || '';
+  const supabaseProjectRef = supabaseUrl ? (supabaseUrl.match(/https:\/\/([a-z0-9-]+)\.supabase\.co/i) || [])[1] || supabaseUrl.slice(0, 50) : 'not_set';
+  console.log('[DBCHECK] FINGERPRINT db=' + dbFingerprint + ' supabase_ref=' + (supabaseProjectRef || 'n/a'));
+
   // Heurística: se PGUSER/PGHOST existirem, avisar possível override humano/config
   if (pgEnv.PGHOST || pgEnv.PGUSER || pgEnv.PGDATABASE || pgEnv.PGPORT) {
     console.log('[DBCHECK] WARNING: PG* vars are present; they may override DATABASE_URL depending on connection code.');

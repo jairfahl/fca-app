@@ -15,10 +15,17 @@ function isDbSslRelaxed() {
 }
 
 /**
+ * Verifica se ambiente é development
+ */
+function isDevelopment() {
+  return process.env.NODE_ENV === 'development';
+}
+
+/**
  * Retorna o modo SSL atual: "RELAXED" ou "STRICT"
  */
 function getDbSslMode() {
-  return isDbSslRelaxed() ? 'RELAXED' : 'STRICT';
+  return isDevelopment() || isDbSslRelaxed() ? 'RELAXED' : 'STRICT';
 }
 
 /**
@@ -54,7 +61,7 @@ function createPgPool() {
   const parsed = parse(rawUrl);
 
   // Determinar configuração SSL
-  const isRelaxed = isDbSslRelaxed();
+  const isRelaxed = isDevelopment() || isDbSslRelaxed();
   const sslConfig = isRelaxed
     ? { rejectUnauthorized: false }  // RELAXED: permite MITM local
     : { rejectUnauthorized: true };  // STRICT: valida certificado

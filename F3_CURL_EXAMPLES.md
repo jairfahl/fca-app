@@ -55,7 +55,11 @@ curl -X GET "${API_URL}/assessments/${ASSESSMENT_ID}/recommendations" \
 
 ## 2. POST /assessments/:id/free-actions/select
 
-Seleciona uma recomendação do Top 10 como ação gratuita.
+Seleciona uma recomendação do Top 10 (ou fallback) como ação gratuita. **Idempotente**: se já existe free_action para o processo, retorna 200 com o existente.
+
+**recommendation_id** aceita:
+- UUID de recomendação do Top 10
+- `fallback-COMERCIAL`, `fallback-OPERACOES`, `fallback-ADM_FIN`, `fallback-GESTAO` (quando catálogo incompleto)
 
 ```bash
 curl -X POST "${API_URL}/assessments/${ASSESSMENT_ID}/free-actions/select" \
@@ -66,21 +70,23 @@ curl -X POST "${API_URL}/assessments/${ASSESSMENT_ID}/free-actions/select" \
   }'
 ```
 
-**Resposta esperada (201):**
+**Resposta esperada (201 — 1ª chamada):**
 ```json
 {
   "id": "uuid-da-free-action",
   "assessment_id": "uuid-do-assessment",
+  "company_id": "uuid-da-company",
   "recommendation_id": "uuid-da-recomendacao",
   "process": "COMERCIAL",
   "status": "ACTIVE",
-  "created_at": "2026-01-30T12:00:00Z",
-  "completed_at": null
+  "created_at": "2026-01-30T12:00:00Z"
 }
 ```
 
+**Resposta esperada (200 — 2ª chamada, mesmo processo):** mesmo JSON acima (idempotente, nunca retorna 400 por "já existe")
+
 **Erros:**
-- `400`: recommendation_id não está no Top 10 OU já existe free_action para esse processo
+- `400`: recommendation_id não está no Top 10 OU processo inválido no fallback
 - `401`: Token ausente ou inválido
 - `403`: Assessment não pertence ao usuário
 - `404`: Assessment não encontrado
@@ -194,6 +200,18 @@ curl -X POST "${API_URL}/free-actions/${FREE_ACTION_ID}/evidence" \
 curl -X GET "${API_URL}/free-actions/${FREE_ACTION_ID}" \
   -H "Authorization: Bearer ${JWT_TOKEN}" | jq
 ```
+
+---
+
+## Teste de Idempotência
+
+Execute o script para validar que duas chamadas seguidas retornam o mesmo `id`:
+
+```bash
+./scripts/test-free-actions-select-idempotent.sh <ASSESSMENT_ID>
+```
+
+Ver `scripts/FREE_ACTIONS_SELECT_IDEMPOTENT_EVIDENCE.md` para detalhes.
 
 ---
 

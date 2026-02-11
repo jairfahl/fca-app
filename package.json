@@ -9,8 +9,9 @@
     "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
     "install:all": "npm install",
     "db:migrate": "node db/run-migrations.js",
-    "db:seed": "node db/seed/seed-recommendations.js",
-    "db:seed:f3": "node db/seed/seed-f3-recommendations.js"
+    "db:seed": "node db/seed/seed-recommendations.js && node db/seed/seed-full-catalog.js",
+    "db:seed:f3": "node db/seed/seed-f3-recommendations.js",
+    "db:seed:full": "node db/seed/seed-full-catalog.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

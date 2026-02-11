@@ -192,4 +192,5 @@ Todos os endpoints acima requerem `Authorization: Bearer <jwt_token>` válido e 
 
 - `README.md`: Visão geral do projeto e endpoints
 - `F4_DOCUMENTATION.md`: Documentação completa do F4, F4B e Gate C
+- `F3_CURL_EXAMPLES.md`: Exemplos de cURL para F3
 - `GATEC_NEXT_BEST_ACTIONS.md`: Documentação do Gate C

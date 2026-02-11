@@ -44,6 +44,8 @@ cp .env.example .env
    - `NODE_ENV`: Ambiente (development/production)
    - `FRONTEND_ORIGINS`: Origens permitidas para CORS (ex: `http://localhost:3000,http://localhost:3001`)
    - `DB_SSL_RELAXED`: Configuração SSL (opcional, apenas desenvolvimento). Veja [docs/DB_SSL.md](docs/DB_SSL.md) para detalhes.
+   - `FULL_TEST_MODE`: (opcional) Quando `true`, qualquer usuário pode acessar FULL sem pagamento. Útil para QA. Default: `false`.
+   - `FULL_ADMIN_WHITELIST`: (opcional) Emails separados por vírgula que sempre têm acesso FULL (ex: `admin@fca.com,fca@fca.com`). Independente de `FULL_TEST_MODE`.
 
 ## Como rodar
 
@@ -118,13 +120,25 @@ As migrações estão localizadas em `db/migrations/`:
 - `006_f4_entitlements.sql`: Tabelas para controle de acesso (entitlements) e eventos de paywall (paywall_events)
 - `007_f4b_full_initiatives.sql`: Tabela legacy de iniciativas FULL (não utilizada)
 - `008_f4b_full_initiatives_catalog_and_rank.sql`: Catálogo de iniciativas FULL e ranking persistido por assessment
+- `009_d1_leads_triage.sql`: Tabela de triagem de leads (Gate D1)
+- `010_light_action_plans_progress.sql`: Evolução de planos Light
+- `011_light_action_plans_compat.sql`: Compatibilidade light_action_plans
+- `012_allow_fallback_recommendation_id.sql`: recommendation_id TEXT para fallbacks (fallback-COMERCIAL etc.)
+- `013_assessment_free_action_evidences_fix.sql`: Correção da coluna free_action_id em evidências
+- `014_full_module_schema.sql`: Módulo FULL — ciclo, catálogos, respostas, scores, recomendações, ações, evidência, notas consultor
+- `015_full_dod_evidence.sql`: Evidência DoD (critérios de conclusão) por ação
+- `016_full_question_bank.sql`: answer_type e dimension em perguntas
+- `017_full_findings.sql`: Findings persistidos (3 vazamentos + 3 alavancas)
+- `018_full_catalog_segment_and_microvalue.sql`: segment_applicability e typical_impact_text
+- `019_full_process_quick_win.sql`: quick_win em full_process_catalog
 
 ## Scripts disponíveis
 
 - `npm run dev`: Inicia API e Web em modo desenvolvimento (usa concurrently)
 - `npm run install:all`: Instala dependências de todos os workspaces
 - `npm run db:migrate`: Aplica migrações pendentes do banco de dados
-- `npm run db:seed`: Popula tabela recommendations_catalog com dados iniciais
+- `npm run db:seed`: Popula recommendations_catalog e catálogo FULL (processos, perguntas, recomendações, ações)
+- `npm run db:seed:full`: Popula apenas o catálogo FULL a partir de `catalogs/full/*.json`
 
 ## Workspaces
 
@@ -139,18 +153,23 @@ As migrações estão localizadas em `db/migrations/`:
 - `/logout`: Logout e redirecionamento
 
 ### Onboarding
-- `/onboarding`: Criação da primeira empresa (redireciona para `/diagnostico` se já existe)
+- `/onboarding`: Criação da primeira empresa (redireciona para `/diagnostico` ao criar/listar company)
 
 ### Diagnóstico
-- `/diagnostico?company_id=<uuid>`: Tela de diagnóstico (LIGHT ou FULL conforme entitlement)
-- `/results?assessment_id=<uuid>`: Resultados do diagnóstico LIGHT
-- `/recommendations?assessment_id=<uuid>`: Top 10 de recomendações (F3)
-- `/free-action/[id]`: Página para executar ação gratuita e registrar evidência (F3)
+- `/diagnostico?company_id=<uuid>`: Diagnóstico LIGHT (12 perguntas). Se já existe assessment LIGHT COMPLETED, redireciona para o resultado existente
+- `/results?assessment_id=<uuid>&company_id=<uuid>`: Resultados do diagnóstico LIGHT + recomendações rápidas (4 processos) + CTAs
+- `/recommendations?assessment_id=<uuid>&company_id=<uuid>`: Recomendações (F3) + seleção LIGHT (4 ações: 1 por processo)
+- `/free-action/[id]?company_id=<uuid>&assessment_id=<uuid>`: Registrar evidência (F3), com retorno preservando contexto
+- `/plano-30-dias?assessment_id=<uuid>&company_id=<uuid>`: Visualização consolidada dos 4 planos de 30 dias
 
 ### Paywall e FULL
 - `/paywall?company_id=<uuid>`: Página de planos (placeholder)
 - `/full?company_id=<uuid>`: Diagnóstico completo (requer entitlement FULL)
-- `/full/diagnostic?company_id=<uuid>`: Página do diagnóstico completo FULL (requer entitlement FULL)
+- `/full/wizard?company_id=&assessment_id=`: Wizard do diagnóstico FULL (4 processos, 12 perguntas cada)
+- `/full/diagnostico?company_id=&assessment_id=`: Navegação por processo do diagnóstico FULL
+- `/full/resultados?company_id=&assessment_id=`: Resultados FULL — Raio-X do dono (3 vazamentos + 3 alavancas), CTA por status do plano
+- `/full/acoes?company_id=&assessment_id=`: Seleção de 3 ações (assinar plano mínimo). Suporta `?action_key=` (foco) e `?conteudo_definicao=1` (aviso)
+- `/full/dashboard?company_id=&assessment_id=`: Dashboard de execução (3 ações). Suporta `?action_key=` (scroll)
 
 ## Endpoints Backend (Express)
 
@@ -169,18 +188,32 @@ As migrações estão localizadas em `db/migrations/`:
 
 ### Recommendations e Free Actions (F3)
 - `GET /assessments/:id/recommendations`: Gera/retorna Top 10 de recomendações determinísticas
-- `POST /assessments/:id/free-actions/select`: Seleciona recomendação como ação gratuita (máx. 1 por processo)
+- `POST /assessments/:id/free-actions/select`: Seleciona recomendação como ação gratuita (máx. 1 por processo). **Idempotente**: se já existe para o processo, retorna 200 com o existente (nunca 400)
 - `POST /free-actions/:id/evidence`: Registra evidência textual (write-once)
 - `GET /free-actions/:id`: Recupera ação gratuita com recomendação e evidência
+- `GET /light/plans?assessment_id=&company_id=`: Lista planos Light (30 dias) por assessment
+- `GET /light/plans/:processKey/status?assessment_id=&company_id=`: Status do plano por processo (`exists`, `plan_id`, `completed`, `updated_at`)
+- `GET /light/plans/:processKey?assessment_id=&company_id=`: Retorna plano salvo por processo (free_action + light_plan)
+- `POST /light/plans`: Cria/atualiza plano Light (30 dias). Idempotente: se já existe, retorna 200 com `already_exists: true` (nunca 400 por duplicidade)
 
 ### Entitlements e Paywall (F4)
-- `GET /entitlements?company_id=<uuid>`: Retorna entitlement do usuário para uma company (default: LIGHT/ACTIVE)
+- `GET /entitlements?company_id=<uuid>`: Retorna entitlement do usuário (default: LIGHT/ACTIVE) e `can_access_full` (gate centralizado)
+- `POST /entitlements/full/activate_test?company_id=<uuid>`: Ativa FULL em modo teste (whitelist ou FULL_TEST_MODE). Persiste entitlement.
 - `POST /paywall/events`: Registra eventos do paywall (VIEW_PAYWALL, CLICK_UPGRADE, UNLOCK_FULL)
 - `POST /entitlements/manual-unlock`: Desbloqueia FULL manualmente (apenas dev/QA, não production)
-- `GET /full/diagnostic?company_id=<uuid>`: Retorna diagnóstico completo (requer entitlement FULL/ACTIVE)
+- `GET /full/diagnostic?company_id=<uuid>`: Retorna diagnóstico completo (gate: FULL/ACTIVE, whitelist ou FULL_TEST_MODE)
 
 ### Iniciativas FULL (F4B)
 - `GET /full/assessments/:id/initiatives?company_id=<uuid>`: Gera/retorna Top 10-12 de iniciativas FULL determinísticas (persistido)
+
+### Módulo FULL — Ciclo completo
+- `GET /full/catalog?segment=C|I|S&company_id=`: Catálogo de processos e perguntas (microvalor, typical_impact_text)
+- `GET /full/plan/status?assessment_id=&company_id=`: Status do plano mínimo (`exists`, `progress`, `next_action_title`)
+- `GET /full/results?assessment_id=&company_id=`: Resultados FULL (findings, six_pack: vazamentos + alavancas)
+- `GET /full/actions?assessment_id=&company_id=`: Sugestões de ações para o plano (3 por findings)
+- `POST /full/plan?company_id=`: Cria/atualiza plano mínimo (3 ações). Body: `{ assessment_id, actions: [...] }`
+- `GET /full/assessments/:id/plan?company_id=`: Lista plano (3 ações selecionadas)
+- `GET /full/assessments/:id/dashboard?company_id=`: Dashboard consolidado (scores, actions, evidence)
 
 ### Gate C - Visão Gerencial Estruturada
 - `GET /full/assessments/:id/summary?company_id=<uuid>`: Resumo executivo do diagnóstico FULL (scores, critical gaps, top initiatives, dependencies, highlights)
@@ -212,15 +245,10 @@ $ npm run db:migrate
 **Output esperado:**
 ```
 Iniciando migrações...
-8 migração(ões) pendente(s)
+13 migração(ões) pendente(s)
 MIGRATION APPLIED: 001_init.sql
-MIGRATION APPLIED: 002_f2_schema_fixes.sql
-MIGRATION APPLIED: 003_f3_recommendations_ranked.sql
-MIGRATION APPLIED: 004_f3_assessment_free_actions.sql
-MIGRATION APPLIED: 005_f3_assessment_free_action_evidences.sql
-MIGRATION APPLIED: 006_f4_entitlements.sql
-MIGRATION APPLIED: 007_f4b_full_initiatives.sql
-MIGRATION APPLIED: 008_f4b_full_initiatives_catalog_and_rank.sql
+...
+MIGRATION APPLIED: 013_assessment_free_action_evidences_fix.sql
 MIGRATIONS OK
 ```
 
@@ -304,10 +332,15 @@ Todas as tabelas possuem RLS habilitado:
 - `AUTH_FAIL_CLOSED_FIX.md`: Documentação da correção crítica de segurança
 - `F3_AUDIT_EVIDENCE.md`: Evidências de auditoria para F3 (recomendações e ações gratuitas)
 - `F3_CURL_EXAMPLES.md`: Exemplos de cURL para testar endpoints F3
+- `scripts/FREE_ACTIONS_SELECT_IDEMPOTENT_EVIDENCE.md`: Evidência da idempotência do select (200/201)
 - `F4_DOCUMENTATION.md`: Documentação completa do F4 (entitlements e paywall)
 - `GATEC_NEXT_BEST_ACTIONS.md`: Documentação do endpoint next-best-actions (Gate C)
 - `GATEC_SCHEMA_FIXES.md`: Documentação dos ajustes de schema para robustez
 - `scripts/GATEC_EVIDENCE_README.md`: Guia dos scripts de evidência para Gate C
+- `docs/LIGHT_PLANS_API.md`: Contrato da API de planos Light (status, read, create idempotente)
+- `docs/FULL_MODULE_SCHEMA.md`: Schema do módulo FULL (tabelas, migrations)
+- `docs/FULL_QUESTION_BANK_API.md`: Contrato da API de catálogo e perguntas FULL
+- `catalogs/full/README.md`: Catálogo canônico FULL (processes, questions, recommendations, actions)
 
 ## Desenvolvimento
 

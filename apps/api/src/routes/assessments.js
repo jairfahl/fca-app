@@ -28,6 +28,28 @@ router.post('/light', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'company não pertence ao usuário' });
     }
 
+    // Se já existe assessment LIGHT para a company, reutilizar
+    const { data: existingAssessment, error: existingError } = await supabase
+      .from('assessments')
+      .select('id, status, company_id, type, created_at')
+      .eq('company_id', company_id)
+      .eq('type', 'LIGHT')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) {
+      console.error('Erro ao verificar assessment existente:', existingError.message);
+      return res.status(500).json({ error: 'erro ao verificar assessment' });
+    }
+
+    if (existingAssessment) {
+      return res.status(200).json({
+        ...existingAssessment,
+        reused: true,
+      });
+    }
+
     // Criar assessment LIGHT com status DRAFT
     const { data: assessment, error: assessmentError } = await supabase
       .from('assessments')

@@ -8,6 +8,8 @@ import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { auditLog } from '@/lib/auditLog';
 import { Entitlement, getEntitlement } from '@/lib/entitlement';
+import { assertFullAccess } from '@/lib/fullGuard';
+import { AssinarFullButton } from '@/components/AssinarFullButton';
 
 type DiagnosticoState = 'loading' | 'ready' | 'submitting' | 'error' | 'unauthorized';
 
@@ -140,7 +142,6 @@ function DiagnosticoContent() {
   const [existingCompletedId, setExistingCompletedId] = useState<string | null>(null);
   const hasLoggedEntitlement = useRef(false);
   const hasLoggedRenderState = useRef(false);
-  const hasRedirectedRef = useRef(false);
 
   useEffect(() => {
     if (!session?.access_token) {
@@ -167,7 +168,7 @@ function DiagnosticoContent() {
           return;
         }
 
-        setError('company_id é obrigatório');
+        setError('Nenhuma empresa cadastrada. Cadastre uma empresa para continuar.');
         setState('error');
       } catch (err: any) {
         if (cancelled) return;
@@ -190,7 +191,7 @@ function DiagnosticoContent() {
 
     let cancelled = false;
 
-    const loadCompany = async () => {
+    const loadCompanyAndAssessment = async () => {
       try {
         setState('loading');
         setError('');
@@ -201,7 +202,7 @@ function DiagnosticoContent() {
 
         const company = (companies || []).find((c: any) => c.id === companyId);
         if (!company) {
-          setError('company_id inválido');
+          setError('Empresa não encontrada. Selecione uma empresa válida.');
           setState('error');
           return;
         }
@@ -224,15 +225,31 @@ function DiagnosticoContent() {
           setEntitlement(ent);
         }
 
+        // Verificar se já existe assessment LIGHT COMPLETED (bloqueia novo diagnóstico)
+        const assessment = await apiFetch(
+          '/assessments/light',
+          { method: 'POST', body: { company_id: companyId } },
+          session.access_token
+        );
+
+        if (cancelled) return;
+
+        if (assessment?.status === 'COMPLETED') {
+          setExistingCompletedId(assessment.id);
+          if (typeof window !== 'undefined' && companyId) {
+            window.localStorage.setItem(`light_last_assessment:${companyId}`, assessment.id);
+          }
+        }
+
         setState('ready');
       } catch (err: any) {
         if (cancelled) return;
-        setError(err.message || 'Erro ao carregar company');
+        setError(err.message || 'Erro ao carregar dados');
         setState('error');
       }
     };
 
-    loadCompany();
+    loadCompanyAndAssessment();
 
     return () => {
       cancelled = true;
@@ -240,59 +257,10 @@ function DiagnosticoContent() {
   }, [companyId, session?.access_token]);
 
   useEffect(() => {
-    if (!companyId || typeof window === 'undefined') {
-      return;
+    if (existingCompletedId && companyId && typeof window !== 'undefined') {
+      setLastAssessmentId(existingCompletedId);
     }
-    const stored = window.localStorage.getItem(`light_last_assessment:${companyId}`);
-    if (stored) {
-      setLastAssessmentId(stored);
-      auditLog('diagnostico_existing_source', { company_id: companyId, source: 'localStorage' });
-    }
-  }, [companyId]);
-
-  useEffect(() => {
-    if (!lastAssessmentId || !companyId || !session?.access_token) {
-      return;
-    }
-    let cancelled = false;
-
-    const checkExisting = async () => {
-      try {
-        const data = await apiFetch(
-          `/assessments/${lastAssessmentId}`,
-          {},
-          session.access_token
-        );
-        if (cancelled) return;
-        const assessment = data?.assessment;
-        if (
-          assessment &&
-          assessment.company_id === companyId &&
-          assessment.status === 'COMPLETED'
-        ) {
-          setExistingCompletedId(lastAssessmentId);
-          auditLog('diagnostico_existing_light', {
-            company_id: companyId,
-            assessment_id: lastAssessmentId,
-          });
-          if (!hasRedirectedRef.current) {
-            hasRedirectedRef.current = true;
-            setTimeout(() => {
-              router.replace(`/results?assessment_id=${lastAssessmentId}&company_id=${companyId}`);
-            }, 800);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    };
-
-    checkExisting();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [lastAssessmentId, companyId, session?.access_token, router]);
+  }, [existingCompletedId, companyId]);
 
   const handleScoreChange = (key: string, value: string) => {
     setScores((prev) => ({
@@ -333,6 +301,7 @@ function DiagnosticoContent() {
         };
       });
 
+      // AUDIT(LITE): /assessments/light reuses DRAFT/COMPLETED to enforce 1 LITE per company.
       const assessment = await apiFetch(
         '/assessments/light',
         {
@@ -341,6 +310,15 @@ function DiagnosticoContent() {
         },
         session.access_token
       );
+
+      if (assessment?.status === 'COMPLETED') {
+        if (typeof window !== 'undefined' && companyId) {
+          window.localStorage.setItem(`light_last_assessment:${companyId}`, assessment.id);
+          setLastAssessmentId(assessment.id);
+        }
+        router.replace(`/results?assessment_id=${assessment.id}&company_id=${companyId}`);
+        return;
+      }
 
       await apiFetch(
         `/assessments/${assessment.id}/light/submit`,
@@ -375,7 +353,7 @@ function DiagnosticoContent() {
   const totalQuestions = questions.length || 12;
   const missingCount = Math.max(0, totalQuestions - answeredCount);
   const progressPercent = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
-  const hasFullAccess = entitlement?.plan === 'FULL' && entitlement?.status === 'ACTIVE';
+  const hasFullAccess = assertFullAccess(entitlement);
 
   useEffect(() => {
     if (!companyId || state !== 'ready' || hasLoggedRenderState.current) {
@@ -399,7 +377,17 @@ function DiagnosticoContent() {
         <div style={{ color: '#666' }}>
           <span>Diagnóstico</span>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {state === 'ready' && companyId && (
+            <AssinarFullButton
+              companyId={companyId}
+              entitlement={entitlement}
+              accessToken={session?.access_token ?? null}
+              variant="secondary"
+              labelAuthorized="Assinar FULL"
+              labelPaywall="Assinar FULL"
+            />
+          )}
           <Link
             href="/logout"
             style={{
@@ -448,25 +436,54 @@ function DiagnosticoContent() {
           backgroundColor: '#f8d7da',
           color: '#721c24'
         }}>
-          <p>Erro: {error || 'Erro ao carregar diagnóstico'}</p>
+          <p style={{ marginBottom: '1rem' }}>{error || 'Erro ao carregar diagnóstico'}</p>
+          <Link href="/onboarding" style={{ color: '#0070f3', fontWeight: 'bold' }}>
+            Voltar
+          </Link>
         </div>
       )}
 
-      {state === 'ready' && (
+      {state === 'ready' && existingCompletedId && (
+        <div style={{
+          border: '1px solid #28a745',
+          borderRadius: '8px',
+          padding: '2rem',
+          backgroundColor: '#d4edda',
+          color: '#155724'
+        }}>
+          <h2 style={{ marginBottom: '0.5rem' }}>Diagnóstico já concluído</h2>
+          <p style={{ marginBottom: '1.5rem', color: '#155724' }}>
+            Você já realizou o diagnóstico LIGHT para esta empresa.
+          </p>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Link
+              href={`/results?assessment_id=${existingCompletedId}&company_id=${companyId}`}
+              style={{
+                display: 'inline-block',
+                backgroundColor: '#0070f3',
+                color: '#fff',
+                padding: '0.75rem 1.25rem',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: 'bold'
+              }}
+            >
+              Ver resultado
+            </Link>
+            <AssinarFullButton
+              companyId={companyId || ''}
+              entitlement={entitlement}
+              accessToken={session?.access_token ?? null}
+              variant="primary"
+              labelAuthorized="Assinar FULL"
+              labelPaywall="Assinar FULL"
+            />
+          </div>
+        </div>
+      )}
+
+      {state === 'ready' && !existingCompletedId && (
         <form id="light-diagnostico-form" onSubmit={handleSubmit}>
-          {existingCompletedId && (
-            <div style={{
-              border: '1px solid #ffeeba',
-              borderRadius: '6px',
-              padding: '0.75rem',
-              backgroundColor: '#fff3cd',
-              color: '#856404',
-              marginBottom: '1rem',
-              fontSize: '0.9rem'
-            }}>
-              Diagnóstico LIGHT já concluído para esta empresa. Redirecionando para o resultado.
-            </div>
-          )}
           <div style={{
             border: '1px solid #ddd',
             borderRadius: '8px',

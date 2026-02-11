@@ -1,13 +1,58 @@
 'use client';
 
-import { Suspense, useState, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useState, type CSSProperties } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
-import { useSearchParams, useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { apiFetchAuth } from '@/lib/apiAuth';
+import { apiFetch, ApiError } from '@/lib/api';
+import { getEntitlement } from '@/lib/entitlement';
+import { assertFullAccess } from '@/lib/fullGuard';
+import {
+  humanizeAnswerValue,
+  humanizeBandInText,
+  humanizeStatus,
+  labels,
+} from '@/lib/uiCopy';
 
-type FullPageState = 'loading' | 'success' | 'blocked' | 'error' | 'missing_company';
+type FullPageState = 'loading' | 'ready' | 'blocked' | 'error' | 'missing_company';
+
+type CurrentAssessment = {
+  id: string;
+  status: string;
+  type: 'FULL';
+  answers?: Array<{ process_key: string; question_key: string }>;
+};
+
+type SixPackItem = {
+  title: string;
+  o_que_acontece: string;
+  custo_nao_agir: string;
+  muda_em_30_dias: string;
+  primeiro_passo_action_id: string | null;
+  primeiro_passo?: string | null;
+  is_fallback?: boolean;
+  supporting: {
+    processes: string[];
+    como_puxou_nivel?: string | null;
+    questions: Array<{
+      process_key: string;
+      question_key: string;
+      question_text: string;
+      answer_value: number;
+      answer_text?: string | null;
+    }>;
+  };
+};
+
+type SixPack = { vazamentos: SixPackItem[]; alavancas: SixPackItem[] };
+
+const PROCESS_LABELS: Record<string, string> = {
+  COMERCIAL: 'Comercial',
+  OPERACOES: 'Operações',
+  ADM_FIN: 'Adm/Fin',
+  GESTAO: 'Gestão',
+};
 
 export default function FullPage() {
   return (
@@ -20,336 +65,214 @@ export default function FullPage() {
 }
 
 function FullContent() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const searchParams = useSearchParams();
-  const router = useRouter();
   const companyId = searchParams.get('company_id');
 
   const [state, setState] = useState<FullPageState>('loading');
-  const [fullData, setFullData] = useState<any>(null);
   const [error, setError] = useState('');
-  
-  // Refs para evitar loops e múltiplas chamadas
-  const hasLoadedRef = useRef(false);
-  const hasLoggedViewPaywallRef = useRef(false);
+  const [current, setCurrent] = useState<CurrentAssessment | null>(null);
+  const [showSixPack, setShowSixPack] = useState(false);
+  const [sixPack, setSixPack] = useState<SixPack | null>(null);
+  const [sixPackLoading, setSixPackLoading] = useState(false);
 
   useEffect(() => {
-    // Passo 1: Validar company_id
     if (!companyId) {
       setState('missing_company');
       return;
     }
-
-    // Evitar múltiplas execuções do mesmo companyId
-    if (hasLoadedRef.current) {
-      return;
-    }
-
-    const loadFullPage = async () => {
-      // Marcar como carregando para evitar execuções paralelas
-      hasLoadedRef.current = true;
-
+    const load = async () => {
       try {
         setState('loading');
         setError('');
-
-        // Passo 2: Gate - Verificar entitlement primeiro
-        let entitlementData;
-        try {
-          entitlementData = await apiFetchAuth(
-            `/entitlements?company_id=${companyId}`
-          );
-        } catch (entErr: any) {
-          // Tratar erro de entitlement sem usar instanceof
-          const status = (entErr && typeof entErr === 'object' && 'status' in entErr) 
-            ? (entErr as { status: number }).status 
-            : null;
-          
-          if (status === 401) {
-            // Redirecionamento já é feito pelo apiFetchAuth
-            hasLoadedRef.current = false; // Reset para permitir retry após login
-            return;
-          }
-          
-          setError('Erro ao verificar entitlement');
+        if (!session?.access_token) {
+          setError('Sessão expirada');
           setState('error');
-          hasLoadedRef.current = false; // Reset para permitir retry
-          if (process.env.NODE_ENV === 'development') {
-            console.error('Erro ao buscar entitlement:', entErr);
-          }
           return;
         }
-
-        // Passo 3: Normalizar entitlement (pode ser objeto único ou array)
-        const entList = Array.isArray(entitlementData) 
-          ? entitlementData.filter(Boolean)
-          : entitlementData 
-            ? [entitlementData].filter(Boolean)
-            : [];
-
-        // Determinar FULL ativo (dar prioridade para FULL sobre LIGHT)
-        const hasFullActive = entList.some(
-          (e: any) => e?.plan === 'FULL' && e?.status === 'ACTIVE'
-        );
-
-        if (!hasFullActive) {
-          // Gate falhou: não chamar /full/diagnostic, mostrar paywall
+        const ent = await getEntitlement(companyId, session.access_token);
+        if (!assertFullAccess(ent)) {
           setState('blocked');
-          
-          // Registrar VIEW_PAYWALL apenas uma vez
-          if (!hasLoggedViewPaywallRef.current) {
-            hasLoggedViewPaywallRef.current = true;
-            
-            apiFetchAuth('/paywall/events', {
-              method: 'POST',
-              body: {
-                event: 'VIEW_PAYWALL',
-                company_id: companyId,
-                meta: { screen: 'full' }
-              }
-            }).catch((logErr) => {
-              console.error('Erro ao registrar VIEW_PAYWALL:', logErr);
-            });
-
-            if (process.env.NODE_ENV === 'development') {
-              console.log('PAYWALL view_paywall (full page)');
-            }
-          }
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.log('FULL gate blocked - entitlement:', entList);
-          }
-          
-          hasLoadedRef.current = false; // Reset para permitir retry após unlock
           return;
         }
-
-        // Passo 4: Gate passou - chamar /full/diagnostic
-        try {
-          const data = await apiFetchAuth(
-            `/full/diagnostic?company_id=${companyId}`
-          );
-
-          // 200: sucesso, mostrar dados
-          setFullData(data);
-          setState('success');
-
-          if (process.env.NODE_ENV === 'development') {
-            console.log('FULL fetch 200', data);
-          }
-        } catch (fullErr: any) {
-          // Tratar erro do /full/diagnostic (fallback) sem usar instanceof
-          const status = (fullErr && typeof fullErr === 'object' && 'status' in fullErr) 
-            ? (fullErr as { status: number }).status 
-            : null;
-          
-          if (status === 401) {
-            // Redirecionamento já é feito pelo apiFetchAuth
-            hasLoadedRef.current = false; // Reset para permitir retry após login
-            return;
-          }
-          
-          if (status === 403) {
-            // 403: sem acesso FULL (fallback - não deveria acontecer se gate estiver correto)
-            setState('blocked');
-            
-            // Registrar VIEW_PAYWALL apenas uma vez
-            if (!hasLoggedViewPaywallRef.current) {
-              hasLoggedViewPaywallRef.current = true;
-              
-              apiFetchAuth('/paywall/events', {
-                method: 'POST',
-                body: {
-                  event: 'VIEW_PAYWALL',
-                  company_id: companyId,
-                  meta: { screen: 'full' }
-                }
-              }).catch((logErr) => {
-                console.error('Erro ao registrar VIEW_PAYWALL:', logErr);
-              });
-            }
-            
-            if (process.env.NODE_ENV === 'development') {
-              console.log('FULL fetch 403 - fallback (gate deveria ter bloqueado)');
-            }
-            
-            hasLoadedRef.current = false; // Reset para permitir retry
-            return;
-          }
-          
-          const errorMessage = (fullErr && typeof fullErr === 'object' && 'message' in fullErr)
-            ? String(fullErr.message)
-            : 'Erro ao carregar diagnóstico completo';
-          
-          setError(errorMessage);
-          setState('error');
-          hasLoadedRef.current = false; // Reset para permitir retry
-          if (process.env.NODE_ENV === 'development') {
-            console.error('FULL fetch error:', fullErr);
-          }
-        }
+        const data = await apiFetch(`/full/assessments/current?company_id=${companyId}`, {}, session.access_token);
+        setCurrent(data);
+        setState('ready');
       } catch (err: any) {
-        // Erro geral não tratado (sem usar instanceof)
-        const errorMessage = (err && typeof err === 'object' && 'message' in err)
-          ? String(err.message)
-          : 'Erro inesperado';
-        
-        setError(errorMessage);
+        const status = err instanceof ApiError ? err.status : 0;
+        setError((status === 404 || status === 500) ? 'Falha ao carregar diagnóstico FULL' : (err?.message || 'Falha ao carregar diagnóstico FULL'));
         setState('error');
-        hasLoadedRef.current = false; // Reset para permitir retry
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Erro geral:', err);
-        }
       }
     };
+    if (session?.access_token) load();
+  }, [companyId, session?.access_token]);
 
-    loadFullPage();
+  const loadSixPack = async () => {
+    if (!companyId || !current?.id || !session?.access_token) return;
+    setSixPackLoading(true);
+    setError('');
+    try {
+      const data = await apiFetch(
+        `/full/results?company_id=${companyId}&assessment_id=${current.id}`,
+        {},
+        session.access_token
+      );
+      setSixPack(data?.six_pack || { vazamentos: [], alavancas: [] });
+      setShowSixPack(true);
+    } catch (err: any) {
+      setError(err?.message || 'Falha ao carregar diagnóstico completo');
+    } finally {
+      setSixPackLoading(false);
+    }
+  };
 
-    // Reset ref quando companyId mudar
-    return () => {
-      hasLoadedRef.current = false;
-      hasLoggedViewPaywallRef.current = false;
-    };
-  }, [companyId]); // Dependência apenas em companyId
+  const answered = current?.answers?.length || 0;
+  const isSubmitted = current?.status === 'SUBMITTED' || current?.status === 'CLOSED';
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1rem', padding: '1rem', backgroundColor: '#f0f0f0', borderRadius: '4px' }}>
-        Logado como: {user?.email}
+    <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ marginBottom: '1rem', color: '#666' }}>Logado como: {user?.email}</div>
+      <h1 style={{ marginBottom: '0.25rem' }}>Diagnóstico FULL</h1>
+      <p style={{ marginBottom: '1.5rem', color: '#666' }}>
+        Fluxo completo do diagnóstico FULL (independente do LIGHT), com salvar e retomar.
+      </p>
+
+      {state === 'loading' && <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>}
+      {state === 'missing_company' && <div>{labels.missingCompany}</div>}
+      {state === 'error' && <div style={{ color: '#721c24', background: '#f8d7da', padding: '1rem', borderRadius: '8px' }}>{error}</div>}
+      {state === 'blocked' && <div style={{ color: '#856404', background: '#fff3cd', padding: '1rem', borderRadius: '8px' }}>Conteúdo disponível apenas no FULL.</div>}
+
+      {state === 'ready' && current && (
+        <div style={{ border: '1px solid #dee2e6', borderRadius: '8px', background: '#fff', padding: '1.25rem' }}>
+          <div style={{ marginBottom: '0.75rem' }}><strong>Status:</strong> {humanizeStatus(current.status)}</div>
+          <div style={{ marginBottom: '1rem' }}><strong>Respostas salvas:</strong> {answered}</div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+            {!isSubmitted && (
+              <Link href={`/full/wizard?company_id=${companyId}&assessment_id=${current.id}`} style={cta('#0d6efd')}>
+                Fazer diagnóstico FULL
+              </Link>
+            )}
+            {isSubmitted && (
+              <button
+                onClick={loadSixPack}
+                disabled={sixPackLoading}
+                style={{ ...cta('#6f42c1'), border: 'none', cursor: sixPackLoading ? 'not-allowed' : 'pointer' }}
+              >
+                {sixPackLoading ? 'Carregando...' : 'Ver diagnóstico completo'}
+              </button>
+            )}
+            <Link href={`/full/resultados?company_id=${companyId}&assessment_id=${current.id}`} style={cta('#6f42c1')}>
+              Ver resultados
+            </Link>
+            <Link href={`/full/dashboard?company_id=${companyId}&assessment_id=${current.id}`} style={cta('#198754')}>
+              Dashboard FULL
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {showSixPack && sixPack && (
+        <SixPackSection sixPack={sixPack} onClose={() => setShowSixPack(false)} />
+      )}
+    </div>
+  );
+}
+
+function SixPackSection({ sixPack, onClose }: { sixPack: SixPack; onClose: () => void }) {
+  const [selected, setSelected] = useState<SixPackItem | null>(null);
+
+  return (
+    <div style={{ marginTop: '2rem', border: '1px solid #dee2e6', borderRadius: '8px', padding: '1.25rem', background: '#fff' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0 }}>Raio-X do dono</h2>
+        <button onClick={onClose} style={{ border: '1px solid #dee2e6', borderRadius: '6px', padding: '0.35rem 0.75rem', background: '#fff', cursor: 'pointer' }}>
+          Fechar
+        </button>
       </div>
-      <div style={{ marginBottom: '1rem' }}>
-        <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
-        {' | '}
-        <Link href="/diagnostico" style={{ color: '#0070f3' }}>Voltar ao Diagnóstico</Link>
+      <div style={{ marginBottom: '1.5rem' }}>
+        <h3 style={{ marginBottom: '0.75rem' }}>3 Vazamentos</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+          {sixPack.vazamentos.map((item, i) => (
+            <button
+              key={`v-${i}`}
+              onClick={() => setSelected(item)}
+              style={{ textAlign: 'left', border: '1px solid #dee2e6', borderRadius: '8px', background: '#fff', padding: '1rem', cursor: 'pointer' }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{humanizeBandInText(item.title)}</div>
+              <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {item.o_que_acontece || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '0.35rem' }}><strong>{labels.raioXCusto}:</strong> {item.custo_nao_agir || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '0.35rem' }}><strong>{labels.raioX30Dias}:</strong> {item.muda_em_30_dias || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d' }}><strong>{labels.raioXPrimeiroPasso}:</strong> {item.primeiro_passo || labels.fallbackAction}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <h3 style={{ marginBottom: '0.75rem' }}>3 Alavancas</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+          {sixPack.alavancas.map((item, i) => (
+            <button
+              key={`a-${i}`}
+              onClick={() => setSelected(item)}
+              style={{ textAlign: 'left', border: '1px solid #dee2e6', borderRadius: '8px', background: '#fff', padding: '1rem', cursor: 'pointer' }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{humanizeBandInText(item.title)}</div>
+              <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {item.o_que_acontece || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '0.35rem' }}><strong>{labels.raioXCusto}:</strong> {item.custo_nao_agir || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d', marginBottom: '0.35rem' }}><strong>{labels.raioX30Dias}:</strong> {item.muda_em_30_dias || '—'}</div>
+              <div style={{ fontSize: '0.85rem', color: '#6c757d' }}><strong>{labels.raioXPrimeiroPasso}:</strong> {item.primeiro_passo || labels.fallbackAction}</div>
+            </button>
+          ))}
+        </div>
       </div>
 
-      <h1 style={{ marginBottom: '1rem' }}>Diagnóstico Completo (FULL)</h1>
-
-      {state === 'loading' && (
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          Carregando diagnóstico completo...
-        </div>
-      )}
-
-      {state === 'missing_company' && (
-        <div style={{
-          border: '1px solid #dc3545',
-          borderRadius: '8px',
-          padding: '2rem',
-          backgroundColor: '#f8d7da',
-          color: '#721c24',
-          textAlign: 'center'
-        }}>
-          <p>company_id ausente</p>
-          <p style={{ marginTop: '1rem', fontSize: '0.875rem' }}>
-            Acesse esta página com o parâmetro: <code>?company_id=&lt;uuid&gt;</code>
-          </p>
-        </div>
-      )}
-
-      {state === 'error' && (
-        <div style={{
-          border: '1px solid #dc3545',
-          borderRadius: '8px',
-          padding: '2rem',
-          backgroundColor: '#f8d7da',
-          color: '#721c24'
-        }}>
-          <p><strong>Erro:</strong> {error || 'Erro ao carregar diagnóstico completo'}</p>
-        </div>
-      )}
-
-      {state === 'success' && fullData && (
-        <div>
-          <div style={{
-            border: '1px solid #28a745',
-            borderRadius: '8px',
-            padding: '1rem',
-            backgroundColor: '#d4edda',
-            color: '#155724',
-            marginBottom: '1.5rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}>
-            <span style={{ fontSize: '1.25rem' }}>✓</span>
-            <div>
-              <strong>Diagnóstico completo carregado com sucesso</strong>
-              <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', opacity: 0.8 }}>
-                Plano FULL ativo
+      {selected && (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setSelected(null)}
+          onKeyDown={(e) => { if (e.key === 'Escape') setSelected(null); }}
+          style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '1rem' }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: '8px', padding: '1.25rem', width: '100%', maxWidth: '640px' }}>
+            <h3 style={{ marginTop: 0 }}>{labels.raioXWhyTitle}</h3>
+            <p><strong>{labels.raioXWhatWeSaw}:</strong> {selected.o_que_acontece}</p>
+            <p><strong>{labels.raioXCusto}:</strong> {selected.custo_nao_agir}</p>
+            <p><strong>{labels.raioX30Dias}:</strong> {selected.muda_em_30_dias}</p>
+            {selected.supporting?.como_puxou_nivel && (
+              <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#f8f9fa', borderRadius: '6px' }}>
+                <strong style={{ fontSize: '0.9rem', color: '#495057' }}>{labels.raioXComoPuxou}:</strong>{' '}
+                <span style={{ color: '#333' }}>{selected.supporting.como_puxou_nivel}</span>
               </div>
+            )}
+            <h4 style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>{labels.raioXSignals}</h4>
+            {(selected.supporting?.questions?.length ?? 0) === 0 ? (
+              <p style={{ color: '#777' }}>Sem sinais detalhados.</p>
+            ) : (
+              <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                {selected.supporting.questions.map((q, idx) => (
+                  <li key={idx}>{q.question_text || `${PROCESS_LABELS[q.process_key] || q.process_key} — ${q.question_key}`}: {q.answer_text ?? humanizeAnswerValue(q.answer_value)}</li>
+                ))}
+              </ul>
+            )}
+            <div style={{ marginTop: '1rem', textAlign: 'right' }}>
+              <button onClick={() => setSelected(null)} style={{ border: 'none', borderRadius: '6px', padding: '0.5rem 1rem', background: '#0d6efd', color: '#fff', cursor: 'pointer' }}>Fechar</button>
             </div>
           </div>
-
-          <div style={{
-            border: '1px solid #ddd',
-            borderRadius: '8px',
-            padding: '2rem',
-            backgroundColor: '#fff',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
-          }}>
-            <h2 style={{ marginBottom: '1rem', color: '#333' }}>
-              Conteúdo do Diagnóstico Completo
-            </h2>
-            <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.875rem' }}>
-              Dados retornados pelo endpoint /full/diagnostic:
-            </p>
-            <pre style={{
-              backgroundColor: '#f8f9fa',
-              padding: '1rem',
-              borderRadius: '4px',
-              overflow: 'auto',
-              fontSize: '0.875rem',
-              lineHeight: '1.5',
-              border: '1px solid #dee2e6',
-              maxHeight: '500px'
-            }}>
-              {JSON.stringify(fullData, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
-
-      {state === 'blocked' && (
-        <div style={{
-          border: '2px solid #ffc107',
-          borderRadius: '8px',
-          padding: '2rem',
-          backgroundColor: '#fff3cd',
-          textAlign: 'center'
-        }}>
-          <h2 style={{ marginBottom: '1rem', color: '#856404' }}>
-            Conteúdo disponível apenas no FULL
-          </h2>
-          <p style={{ marginBottom: '1.5rem', color: '#856404', lineHeight: '1.6' }}>
-            Este diagnóstico completo requer um plano FULL ativo.
-            No plano LIGHT você tem acesso apenas ao resumo dos resultados.
-          </p>
-          
-          <Link
-            href={`/paywall?company_id=${companyId}`}
-            style={{
-              display: 'inline-block',
-              backgroundColor: '#0070f3',
-              color: '#fff',
-              padding: '1rem 2rem',
-              borderRadius: '8px',
-              fontSize: '1.125rem',
-              fontWeight: 'bold',
-              textDecoration: 'none',
-              transition: 'background-color 0.2s'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.backgroundColor = '#0051cc';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = '#0070f3';
-            }}
-          >
-            Ver planos
-          </Link>
         </div>
       )}
     </div>
   );
+}
+
+function cta(bg: string): CSSProperties {
+  return {
+    display: 'inline-block',
+    backgroundColor: bg,
+    color: '#fff',
+    padding: '0.65rem 1rem',
+    borderRadius: '8px',
+    textDecoration: 'none',
+    fontWeight: 'bold',
+  };
 }

@@ -1,0 +1,46 @@
+[
+  {
+    "area_key": "COMERCIAL",
+    "process_key": "COMERCIAL",
+    "segment_applicability": ["C", "I", "S"],
+    "protects_dimension": "CLIENTE",
+    "protects_text": "Protege relacionamento e receita com clientes",
+    "owner_alert_text": "Foco em conversão e retenção",
+    "typical_impact_band": "HIGH",
+    "typical_impact_text": "5-20 horas/mês perdidas em retrabalho comercial",
+    "quick_win": true
+  },
+  {
+    "area_key": "OPERACOES",
+    "process_key": "OPERACOES",
+    "segment_applicability": ["C", "I", "S"],
+    "protects_dimension": "GARGALO",
+    "protects_text": "Protege capacidade e entrega",
+    "owner_alert_text": "Foco em eficiência e padronização",
+    "typical_impact_band": "HIGH",
+    "typical_impact_text": "5-25 horas/mês em retrabalho e gargalos operacionais",
+    "quick_win": true
+  },
+  {
+    "area_key": "ADM_FIN",
+    "process_key": "ADM_FIN",
+    "segment_applicability": ["C", "I", "S"],
+    "protects_dimension": "DINHEIRO",
+    "protects_text": "Protege fluxo de caixa e previsibilidade",
+    "owner_alert_text": "Foco em controle financeiro",
+    "typical_impact_band": "HIGH",
+    "typical_impact_text": "Vira aperto de caixa e decisões no escuro",
+    "quick_win": true
+  },
+  {
+    "area_key": "GESTAO",
+    "process_key": "GESTAO",
+    "segment_applicability": ["C", "I", "S"],
+    "protects_dimension": "RISCO",
+    "protects_text": "Protege governança e decisão",
+    "owner_alert_text": "Foco em direção e pessoas",
+    "typical_impact_band": "MEDIUM",
+    "typical_impact_text": "Prioridades mudam toda semana e execução perde ritmo",
+    "quick_win": false
+  }
+]

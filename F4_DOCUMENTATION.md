@@ -500,3 +500,7 @@ Ver `scripts/GATEC_EVIDENCE_README.md` para detalhes.
 ✅ **IMPLEMENTADO:** Todos os endpoints F4, F4B e Gate C
 ✅ **TESTADO:** Gate FULL funcionando corretamente
 ✅ **DOCUMENTADO:** Este arquivo + README.md atualizado + documentação Gate C
+
+## Documentação Relacionada (F3)
+
+- `scripts/FREE_ACTIONS_SELECT_IDEMPOTENT_EVIDENCE.md`: Evidência da idempotência do POST free-actions/select (LIGHT)

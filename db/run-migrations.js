@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
-const { createClient } = require('@supabase/supabase-js');
+const { createPgPool } = require('./lib/dbSsl');
 
 // Load env from nearest .env we can find (prefer repo root)
 const envCandidates = [
@@ -23,17 +23,72 @@ for (const p of envCandidates) {
   }
 }
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error('SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY devem estar configuradas no .env');
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL deve estar configurada no .env');
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: {
-    persistSession: false
-  }
-});
+const MIGRATIONS_DIR = path.resolve(__dirname, 'migrations');
 
-module.exports = { supabase };
+async function ensureSchemaMigrationsTable(pool) {
+  await pool.query(`
+    create table if not exists public.schema_migrations (
+      filename text primary key,
+      applied_at timestamptz default now()
+    );
+  `);
+}
+
+async function getAppliedMigrations(pool) {
+  const result = await pool.query('select filename from public.schema_migrations');
+  return new Set(result.rows.map((row) => row.filename));
+}
+
+async function applyMigration(pool, filename, sql) {
+  await pool.query('begin');
+  try {
+    await pool.query(sql);
+    await pool.query(
+      'insert into public.schema_migrations (filename) values ($1)',
+      [filename]
+    );
+    await pool.query('commit');
+  } catch (error) {
+    await pool.query('rollback');
+    throw error;
+  }
+}
+
+async function runMigrations() {
+  console.log('Iniciando migrações...');
+  const pool = createPgPool();
+  try {
+    await ensureSchemaMigrationsTable(pool);
+    const applied = await getAppliedMigrations(pool);
+    const files = fs
+      .readdirSync(MIGRATIONS_DIR)
+      .filter((file) => file.endsWith('.sql'))
+      .sort();
+
+    const pending = files.filter((file) => !applied.has(file));
+    if (pending.length === 0) {
+      console.log('Nenhuma migração pendente.');
+      console.log('MIGRATIONS OK');
+      return;
+    }
+
+    console.log(`${pending.length} migração(ões) pendente(s)`);
+    for (const filename of pending) {
+      const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, filename), 'utf8');
+      await applyMigration(pool, filename, sql);
+      console.log(`MIGRATION APPLIED: ${filename}`);
+    }
+    console.log('MIGRATIONS OK');
+  } finally {
+    await pool.end();
+  }
+}
+
+runMigrations().catch((error) => {
+  console.error('Erro ao executar migrações:', error.message);
+  process.exit(1);
+});

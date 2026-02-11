@@ -1,21 +1,24 @@
 const { supabase } = require('../lib/supabase');
 
+const { canAccessFull } = require('../lib/canAccessFull');
+
 /**
- * Middleware: Requer entitlement FULL/ACTIVE para a company
+ * Middleware: Requer autorização FULL para a company
  * Deve ser usado APÓS requireAuth
- * 
+ *
+ * Gate centralizado: FULL_TEST_MODE, whitelist ou entitlement FULL/ACTIVE.
+ *
  * Lê company_id de:
  * - req.query.company_id (para GET)
  * - req.body.company_id (para POST), se query não existir
- * 
+ *
  * Retorna:
  * - 400 se company_id ausente
- * - 403 se entitlement não for FULL/ACTIVE
- * - next() se entitlement válido
+ * - 403 se não autorizado
+ * - next() se autorizado
  */
 async function requireFullEntitlement(req, res, next) {
   try {
-    // Ler company_id de query ou body
     const companyId = req.query.company_id || req.body.company_id;
 
     if (!companyId || typeof companyId !== 'string' || companyId.trim().length === 0) {
@@ -23,24 +26,16 @@ async function requireFullEntitlement(req, res, next) {
     }
 
     const userId = req.user.id;
+    const userEmail = req.user.email || null;
 
-    // Buscar entitlement FULL/ACTIVE
-    const { data: entitlement, error: entErr } = await supabase
-      .schema('public')
-      .from('entitlements')
-      .select('id, plan, status')
-      .eq('user_id', userId)
-      .eq('company_id', companyId)
-      .eq('plan', 'FULL')
-      .eq('status', 'ACTIVE')
-      .maybeSingle();
+    const allowed = await canAccessFull({
+      userEmail,
+      userId,
+      companyId,
+      supabase,
+    });
 
-    if (entErr) {
-      console.error('Erro ao verificar entitlement:', entErr.message);
-      return res.status(500).json({ error: 'erro ao verificar entitlement' });
-    }
-
-    if (!entitlement) {
+    if (!allowed) {
       console.log(`FULL_GATE_DENY user_id=${userId} company_id=${companyId}`);
       return res.status(403).json({ error: 'conteúdo disponível apenas no FULL' });
     }

@@ -1,5 +1,18 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+/**
+ * Fallback: mensagens amigáveis para códigos de erro da API (quando message_user não vem).
+ */
+const API_ERROR_MESSAGES: Record<string, string> = {
+  CHECKLIST_INCOMPLETE: 'Falta confirmar o que conta como feito.',
+  CHECKLIST_INVALID: 'Falta confirmar o que conta como feito.',
+  DIAG_NOT_READY: 'Conclua o diagnóstico para ver o resultado.',
+  DIAG_NOT_FOUND: 'Diagnóstico não encontrado.',
+  EVIDENCE_REQUIRED: 'Para concluir, registre a evidência (antes e depois).',
+  DROP_REASON_REQUIRED: 'Ao descartar uma ação, informe o motivo.',
+  CYCLE_CLOSED: 'Ciclo fechado. Somente leitura.',
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -41,7 +54,11 @@ export async function apiFetch(
     let errorMessage = 'Erro na requisição';
     try {
       const errorData = await response.json();
-      errorMessage = errorData.error || errorMessage;
+      errorMessage =
+        errorData.message_user ||
+        (errorData.code && API_ERROR_MESSAGES[errorData.code]) ||
+        errorData.error ||
+        errorMessage;
     } catch {
       errorMessage = `Erro ${response.status}: ${response.statusText}`;
     }

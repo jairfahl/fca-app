@@ -148,5 +148,6 @@ Após aplicar a migration:
 
 - `README.md`: Visão geral do projeto e estrutura de migrações
 - `F4_DOCUMENTATION.md`: Documentação completa do F4, F4B e Gate C
+- `F3_CURL_EXAMPLES.md`: Exemplos de cURL para F3
 - `GATEC_NEXT_BEST_ACTIONS.md`: Documentação do endpoint next-best-actions
 - `scripts/GATEC_EVIDENCE_README.md`: Guia dos scripts de evidência para Gate C
