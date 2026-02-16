@@ -49,15 +49,21 @@ async function requireAuth(req, res, next) {
     }
 
     const payload = verified.payload || {};
+    const appMeta = payload.app_metadata || {};
+    const userMeta = payload.user_metadata || {};
 
     if (!payload.sub) {
       console.warn('AUTH FAIL reason=missing sub');
       return json401(res, 'invalid token');
     }
 
+    const roleRaw = appMeta.role || userMeta.role;
+    const role = ['USER', 'CONSULTOR', 'ADMIN'].includes(roleRaw) ? roleRaw : 'USER';
+
     req.user = {
       id: String(payload.sub),
       email: payload.email ? String(payload.email) : null,
+      role,
     };
 
     console.log(`AUTH OK sub=${req.user.id}`);

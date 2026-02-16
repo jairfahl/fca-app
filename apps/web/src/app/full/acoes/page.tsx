@@ -6,16 +6,25 @@ import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
-import { humanizeBand, labels } from '@/lib/uiCopy';
+import { humanizeLevelBand, labels } from '@/lib/uiCopy';
+import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+
+function displayActionTitle(title: string): string {
+  return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
+}
+
+type WhyItem = { question_key: string; answer: number; label?: string };
 
 type Suggestion = {
   process_key: string;
   band: string;
+  nivel_ui?: string;
   action_key: string;
   title: string;
   benefit_text?: string;
   metric_hint?: string;
   dod_checklist?: string[];
+  why?: WhyItem[];
 };
 
 type DraftSelection = {
@@ -54,7 +63,10 @@ function FullAcoesContent() {
 
   const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'error' | 'missing'>('loading');
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState<string | undefined>();
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [requiredCountFromApi, setRequiredCountFromApi] = useState<number>(3);
+  const [remainingCountFromApi, setRemainingCountFromApi] = useState<number>(0);
   const [selected, setSelected] = useState<DraftSelection[]>([]);
   const [conteudoDefinicaoToast, setConteudoDefinicaoToast] = useState(false);
   const actionKeyRef = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -66,24 +78,62 @@ function FullAcoesContent() {
     if (showConteudoDefinicao) setConteudoDefinicaoToast(true);
   }, [showConteudoDefinicao]);
 
+  const [resolvedAssessmentId, setResolvedAssessmentId] = useState<string | null>(null);
+
   useEffect(() => {
     const load = async () => {
-      if (!session?.access_token) return;
-      if (!companyId || !assessmentId) {
-        setState('missing');
+      if (!session?.access_token || !companyId) {
+        if (!companyId) setState('missing');
         return;
       }
       try {
         setState('loading');
+        setError('');
+        const qs = assessmentId
+          ? `assessment_id=${assessmentId}&company_id=${companyId}`
+          : `company_id=${companyId}`;
         const data = await apiFetch(
-          `/full/actions?assessment_id=${assessmentId}&company_id=${companyId}`,
+          `/full/actions?${qs}`,
           {},
           session.access_token
         );
         setSuggestions(data?.suggestions || []);
+        const rc = typeof data?.required_count === 'number' ? data.required_count : Math.min(3, (data?.suggestions || []).length);
+        const rem = typeof data?.remaining_count === 'number' ? data.remaining_count : (data?.suggestions || []).length;
+        setRequiredCountFromApi(Math.max(1, Math.min(3, rc)));
+        setRemainingCountFromApi(Math.max(0, rem));
+        if (rem === 0 && companyId) {
+          const aid = data?.assessment_id || assessmentId;
+          router.replace(aid ? `/full/dashboard?company_id=${companyId}&assessment_id=${aid}&msg=no_actions_left` : `/full/dashboard?company_id=${companyId}&msg=no_actions_left`);
+          return;
+        }
+        const aid = data?.assessment_id || assessmentId;
+        if (aid && !assessmentId && typeof window !== 'undefined') {
+          setResolvedAssessmentId(aid);
+          const params = new URLSearchParams(window.location.search);
+          params.set('assessment_id', aid);
+          router.replace(`/full/acoes?${params.toString()}`, { scroll: false });
+        } else {
+          setResolvedAssessmentId(aid || assessmentId);
+        }
         setState('ready');
       } catch (err: any) {
+        if (err?.code === 'NO_ACTIONS_LEFT') {
+          if (companyId) {
+            router.replace(`/full/dashboard?company_id=${companyId}&assessment_id=${assessmentId || ''}&msg=no_actions_left`);
+          }
+          return;
+        }
+        if (err?.code === 'DIAG_NOT_READY') {
+          const params = new URLSearchParams();
+          if (companyId) params.set('company_id', companyId);
+          if (assessmentId) params.set('assessment_id', assessmentId);
+          params.set('msg', 'diag_incomplete');
+          router.replace(`/full/wizard?${params.toString()}`);
+          return;
+        }
         setError(err?.message || 'Falha ao carregar ações');
+        setErrorCode(err?.code);
         setState('error');
       }
     };
@@ -98,13 +148,15 @@ function FullAcoesContent() {
 
   const selectedSet = useMemo(() => new Set(selected.map((s) => s.action_key)), [selected]);
 
+  const requiredCount = requiredCountFromApi;
+  const maxSelectable = requiredCount;
   const toggleSelect = (s: Suggestion) => {
     setError('');
     setSelected((prev) => {
       const exists = prev.find((p) => p.action_key === s.action_key);
       if (exists) return prev.filter((p) => p.action_key !== s.action_key);
-      if (prev.length >= 3) {
-        setError('Selecione exatamente 3 ações.');
+      if (prev.length >= maxSelectable) {
+        setError(requiredCount === 1 ? 'Esta ação já está selecionada.' : `Selecione exatamente ${maxSelectable} ação(ões).`);
         return prev;
       }
       return [
@@ -128,17 +180,18 @@ function FullAcoesContent() {
     )));
   };
 
-  const canSubmit = selected.length === 3 && selected.every((s) =>
+  const minSelectable = requiredCount;
+  const canSubmit = selected.length === requiredCount && selected.every((s) =>
     s.owner_name.trim() &&
     s.metric_text.trim() &&
     s.checkpoint_date &&
     s.position !== '' &&
     Number(s.position) >= 1 &&
-    Number(s.position) <= 3
-  ) && new Set(selected.map((s) => Number(s.position))).size === 3;
+    Number(s.position) <= maxSelectable
+  ) && new Set(selected.map((s) => Number(s.position))).size === selected.length;
 
   const handleSave = async () => {
-    if (!session?.access_token || !companyId || !assessmentId || !canSubmit) return;
+    if (!session?.access_token || !companyId || !effectiveAssessmentId || !canSubmit) return;
     try {
       setState('saving');
       setError('');
@@ -147,7 +200,7 @@ function FullAcoesContent() {
         {
           method: 'POST',
           body: {
-            assessment_id: assessmentId,
+            assessment_id: effectiveAssessmentId,
             company_id: companyId,
             actions: selected.map((s) => ({
               action_key: s.action_key,
@@ -160,12 +213,19 @@ function FullAcoesContent() {
         },
         session.access_token
       );
-      router.push(`/full/dashboard?company_id=${companyId}&assessment_id=${assessmentId}`);
+      router.push(`/full/dashboard?company_id=${companyId}&assessment_id=${effectiveAssessmentId}`);
     } catch (err: any) {
-      setError(err?.message || 'Falha ao salvar plano de 3 ações');
+      if (err?.code === 'NO_ACTIONS_LEFT' && companyId && effectiveAssessmentId) {
+        router.replace(`/full/dashboard?company_id=${companyId}&assessment_id=${effectiveAssessmentId}&msg=no_actions_left`);
+        return;
+      }
+      setError(err?.message || 'Falha ao salvar plano');
       setState('ready');
     }
   };
+
+  const effectiveAssessmentId = assessmentId || resolvedAssessmentId;
+  const isDiagNotReady = state === 'error' && errorCode === 'DIAG_NOT_READY';
 
   if (state === 'missing') {
     return (
@@ -183,15 +243,36 @@ function FullAcoesContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <h1 style={{ margin: 0 }}>{labels.planMinimal}</h1>
         <Link
-          href={companyId && assessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${assessmentId}` : '/full/resultados'}
+          href={state === 'error' && companyId ? `/full?company_id=${companyId}` : (companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados')}
           style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none' }}
         >
-          Voltar aos resultados
+          {state === 'error' ? 'Voltar ao FULL' : 'Voltar aos resultados'}
         </Link>
       </div>
 
       {state === 'loading' && <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando sugestões...</div>}
-      {state === 'error' && <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24' }}>{error}</div>}
+      {state === 'error' && (
+        <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>
+          {isDiagNotReady ? labels.diagNotReadyMessage : error}
+          <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <Link
+              href={companyId ? `/full/wizard?company_id=${companyId}` : '/full'}
+              style={{ background: '#0d6efd', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
+              data-testid="cta-back-to-full-diagnostic"
+            >
+              Voltar ao diagnóstico
+            </Link>
+            {!isDiagNotReady && (
+              <Link
+                href={companyId ? `/full?company_id=${companyId}` : '/full'}
+                style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
+              >
+                Voltar
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
       {(state === 'ready' || state === 'saving') && (
         <>
           {conteudoDefinicaoToast && (
@@ -215,57 +296,97 @@ function FullAcoesContent() {
               </button>
             </div>
           )}
-          {error && <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>{error}</div>}
-          <div style={{ padding: '1rem', border: '1px solid #b6d4fe', borderRadius: '8px', background: '#e7f3ff', marginBottom: '1.25rem' }}>
-            Selecione exatamente 3 ações e preencha Dono, Métrica, Checkpoint e Ordem (1 a 3).
-          </div>
 
-          <h2 style={{ marginBottom: '0.75rem' }}>Sugestões determinísticas</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-            {suggestions.map((s) => {
-              const checked = selectedSet.has(s.action_key);
-              const isFocused = s.action_key === focusActionKey;
-              return (
-                <button
-                  key={s.action_key}
-                  ref={(el) => { actionKeyRef.current[s.action_key] = el; }}
-                  onClick={() => toggleSelect(s)}
-                  style={{
-                    border: checked ? '2px solid #0d6efd' : isFocused ? '2px solid #198754' : '1px solid #dee2e6',
-                    background: isFocused ? '#e7f5ec' : '#fff',
-                    borderRadius: '8px',
-                    padding: '0.9rem',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                  }}
+          {suggestions.length === 0 ? (
+            <div
+              style={{
+                padding: '2rem',
+                borderRadius: '8px',
+                background: '#f8f9fa',
+                border: '1px solid #dee2e6',
+                textAlign: 'center',
+              }}
+            >
+              <h2 style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '1.25rem' }}>Sem recomendações com encaixe claro</h2>
+              <p style={{ color: '#6c757d', marginBottom: '1.5rem' }}>
+                {labels.noRecommendationsMessage}
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                <Link
+                  href={companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados'}
+                  style={{ background: '#0d6efd', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
                 >
-                  <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
-                    {(PROCESS_LABELS[s.process_key] || s.process_key)} · {humanizeBand(s.band)}
-                  </div>
-                  <div style={{ fontWeight: 600 }}>{s.title}</div>
-                  {s.benefit_text && <div style={{ marginTop: '0.35rem', color: '#555', fontSize: '0.9rem' }}>{s.benefit_text}</div>}
-                </button>
-              );
-            })}
-          </div>
+                  {labels.verResultados}
+                </Link>
+                {companyId && (
+                  <SolicitarAjudaButton
+                    companyId={companyId}
+                    label="Solicitar ajuda"
+                    style={{ padding: '0.6rem 1.25rem', fontWeight: 600 }}
+                  />
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              {error && <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>{error}</div>}
+              {suggestions.length < 4 && (
+                <div style={{ padding: '1rem', border: '1px solid #b6d4fe', borderRadius: '8px', background: '#e7f3ff', marginBottom: '1.25rem' }}>
+                  {labels.fewerActionsExplain}
+                </div>
+              )}
+              <div style={{ padding: '1rem', border: '1px solid #dee2e6', borderRadius: '8px', background: '#f8f9fa', marginBottom: '1.25rem' }}>
+                Selecione exatamente {requiredCount} {requiredCount === 1 ? 'ação' : 'ações'} para os próximos 30 dias. Preencha Dono, Métrica, Checkpoint e Ordem para cada ação.
+              </div>
 
-          <h2 style={{ marginBottom: '0.75rem' }}>Ações selecionadas ({selected.length}/3)</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-            {selected.map((s) => (
-              <div key={s.action_key} style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '1rem', background: '#fff' }}>
-                <div style={{ fontWeight: 600, marginBottom: '0.65rem' }}>{s.title}</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.65rem' }}>
-                  <label style={{ fontSize: '0.9rem' }}>
-                    Dono
+              <h2 style={{ marginBottom: '0.75rem' }}>Recomendações com encaixe claro</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                {suggestions.map((s) => {
+                  const checked = selectedSet.has(s.action_key);
+                  const isFocused = s.action_key === focusActionKey;
+                  const whyText = s.why?.length ? `Por que apareceu: ${s.why.map((w) => `${w.label || w.question_key} (${w.answer}/10)`).join('; ')}` : null;
+                  return (
+                    <button
+                      key={s.action_key}
+                      ref={(el) => { actionKeyRef.current[s.action_key] = el; }}
+                      onClick={() => toggleSelect(s)}
+                      style={{
+                        border: checked ? '2px solid #0d6efd' : isFocused ? '2px solid #198754' : '1px solid #dee2e6',
+                        background: isFocused ? '#e7f5ec' : '#fff',
+                        borderRadius: '8px',
+                        padding: '0.9rem',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
+                        {(PROCESS_LABELS[s.process_key] || s.process_key)} · {humanizeLevelBand(s.nivel_ui || s.band)}
+                      </div>
+                      <div style={{ fontWeight: 600 }}>{s.title}</div>
+                      {s.benefit_text && <div style={{ marginTop: '0.35rem', color: '#555', fontSize: '0.9rem' }}>{s.benefit_text}</div>}
+                      {whyText && <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', color: '#6c757d' }}>{whyText}</div>}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <h2 style={{ marginBottom: '0.75rem' }}>Ações selecionadas ({selected.length}/{maxSelectable})</h2>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+                {selected.map((s) => (
+                  <div key={s.action_key} style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '1rem', background: '#fff' }}>
+                    <div style={{ fontWeight: 600, marginBottom: '0.65rem' }}>{s.title}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.65rem' }}>
+                      <label style={{ fontSize: '0.9rem' }}>
+                        Dono
                     <input
                       type="text"
                       value={s.owner_name}
                       onChange={(e) => updateField(s.action_key, 'owner_name', e.target.value)}
-                      style={{ width: '100%', marginTop: '0.2rem', padding: '0.45rem', borderRadius: '6px', border: '1px solid #ced4da' }}
-                    />
-                  </label>
-                  <label style={{ fontSize: '0.9rem' }}>
-                    Métrica
+                          style={{ width: '100%', marginTop: '0.2rem', padding: '0.45rem', borderRadius: '6px', border: '1px solid #ced4da' }}
+                      />
+                      </label>
+                      <label style={{ fontSize: '0.9rem' }}>
+                        Métrica
                     <input
                       type="text"
                       value={s.metric_text}
@@ -283,38 +404,40 @@ function FullAcoesContent() {
                     />
                   </label>
                   <label style={{ fontSize: '0.9rem' }}>
-                    Ordem (1..3)
+                    Ordem (1..{maxSelectable})
                     <input
                       type="number"
                       min={1}
-                      max={3}
+                      max={maxSelectable}
                       value={s.position}
                       onChange={(e) => updateField(s.action_key, 'position', e.target.value ? Number(e.target.value) : '')}
                       style={{ width: '100%', marginTop: '0.2rem', padding: '0.45rem', borderRadius: '6px', border: '1px solid #ced4da' }}
                     />
                   </label>
-                </div>
-              </div>
-            ))}
-          </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
 
-          <div style={{ marginTop: '1.25rem' }}>
-            <button
-              onClick={handleSave}
-              disabled={!canSubmit || state === 'saving'}
-              style={{
-                border: 'none',
-                borderRadius: '8px',
-                padding: '0.75rem 1.25rem',
-                background: canSubmit ? '#198754' : '#adb5bd',
-                color: '#fff',
-                fontWeight: 700,
-                cursor: canSubmit ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {state === 'saving' ? 'Assinando...' : 'Assinar plano mínimo'}
-            </button>
-          </div>
+            <div style={{ marginTop: '1.25rem' }}>
+              <button
+                onClick={handleSave}
+                disabled={!canSubmit || state === 'saving'}
+                style={{
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '0.75rem 1.25rem',
+                  background: canSubmit ? '#198754' : '#adb5bd',
+                  color: '#fff',
+                  fontWeight: 700,
+                  cursor: canSubmit ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {state === 'saving' ? 'Salvando...' : (requiredCount < 3 ? 'Iniciar execução' : 'Assinar plano mínimo')}
+              </button>
+            </div>
+          </>
+          )}
         </>
       )}
     </div>

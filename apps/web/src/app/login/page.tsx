@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { fetchMe } from '@/lib/api';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -18,18 +19,34 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) {
-        setError(error.message);
+      if (authError) {
+        setError(authError.message);
         setLoading(false);
         return;
       }
 
-      router.push('/onboarding');
+      const token = data.session?.access_token;
+      if (!token) {
+        router.push('/onboarding');
+        return;
+      }
+
+      try {
+        const me = await fetchMe(token);
+        const role = me.role || 'USER';
+        if (role === 'CONSULTOR' || role === 'ADMIN') {
+          router.push('/consultor');
+        } else {
+          router.push('/onboarding');
+        }
+      } catch {
+        router.push('/onboarding');
+      }
     } catch (err: any) {
       setError(err.message || 'Erro ao fazer login');
       setLoading(false);

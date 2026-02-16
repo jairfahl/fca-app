@@ -11,6 +11,9 @@ const f4bRoutes = require('./routes/f4b');
 const gateCRoutes = require('./routes/gateC');
 const leadsRoutes = require('./routes/leads');
 const fullRoutes = require('./routes/full');
+const meRoutes = require('./routes/me');
+const consultorRoutes = require('./routes/consultor');
+const helpRequestsRoutes = require('./routes/helpRequests');
 
 const app = express();
 
@@ -55,6 +58,9 @@ app.use('/', f4Routes);
 app.use('/', f4bRoutes);
 app.use('/', gateCRoutes);
 app.use('/', leadsRoutes);
+app.use('/', meRoutes);
+app.use('/', helpRequestsRoutes);
+app.use('/', consultorRoutes);
 app.use('/', fullRoutes);
 console.log('ROUTES OK: f4 mounted');
 console.log('ROUTES OK: f4b mounted');

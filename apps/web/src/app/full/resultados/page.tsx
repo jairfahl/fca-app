@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
+import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
 import {
   humanizeAnswerValue,
   humanizeBand,
@@ -143,14 +144,22 @@ function FullResultadosContent() {
       <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>Logado como: {user?.email}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
         <h1 style={{ margin: 0 }}>Resultados FULL</h1>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {companyId && <SolicitarAjudaButton companyId={companyId} />}
           <Link
-            href={companyId ? `/full/wizard?company_id=${companyId}&assessment_id=${assessmentId || ''}` : '/full'}
+            href={state === 'error' && companyId ? `/full?company_id=${companyId}` : (companyId ? `/full/wizard?company_id=${companyId}&assessment_id=${assessmentId || ''}` : '/full')}
             style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none' }}
           >
-            Voltar ao diagnóstico
+            {state === 'error' ? 'Voltar ao FULL' : 'Voltar ao diagnóstico'}
           </Link>
-          {planStatus?.exists ? (
+          {state === 'error' ? (
+            <Link
+              href={companyId ? `/full/dashboard?company_id=${companyId}` : '/full/dashboard'}
+              style={{ background: '#198754', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
+            >
+              {labels.followExecution}
+            </Link>
+          ) : planStatus?.exists ? (
             <Link
               href={companyId && assessmentId ? `/full/dashboard?company_id=${companyId}&assessment_id=${assessmentId}` : '/full/dashboard'}
               style={{ background: '#198754', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
@@ -170,7 +179,23 @@ function FullResultadosContent() {
 
       {state === 'loading' && <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando resultados...</div>}
       {state === 'error' && (
-        <div style={{ padding: '1rem', borderRadius: '8px', backgroundColor: '#f8d7da', color: '#721c24' }}>{error}</div>
+        <div style={{ padding: '1rem', borderRadius: '8px', backgroundColor: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>
+          {error}
+          <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            <Link
+              href={companyId ? `/full?company_id=${companyId}` : '/full'}
+              style={{ background: '#0d6efd', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
+            >
+              Voltar ao FULL
+            </Link>
+            <Link
+              href={companyId ? `/full/dashboard?company_id=${companyId}` : '/full/dashboard'}
+              style={{ background: '#198754', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
+            >
+              {labels.followExecution}
+            </Link>
+          </div>
+        </div>
       )}
 
       {state === 'ready' && (
@@ -282,7 +307,8 @@ function isSixPackItem(item: CardItem): item is SixPackItem {
 function getPrimeiroPasso(item: CardItem): string {
   if (isSixPackItem(item)) return (item as SixPackItem).primeiro_passo || labels.fallbackAction;
   const f = item as Finding;
-  return f.primeiro_passo?.action_title || labels.fallbackAction;
+  const t = f.primeiro_passo?.action_title || labels.fallbackAction;
+  return t?.includes('Ação padrão') ? labels.fallbackAction : t;
 }
 
 function getCardLinkHref(

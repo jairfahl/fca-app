@@ -6,8 +6,10 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const API_ERROR_MESSAGES: Record<string, string> = {
   CHECKLIST_INCOMPLETE: 'Falta confirmar o que conta como feito.',
   CHECKLIST_INVALID: 'Falta confirmar o que conta como feito.',
-  DIAG_NOT_READY: 'Conclua o diagnóstico para ver o resultado.',
+  DIAG_NOT_READY: 'Conclua o diagnóstico para sugerir ações.',
+  DIAG_INCOMPLETE: 'Faltam respostas obrigatórias. Preencha todas as perguntas.',
   DIAG_NOT_FOUND: 'Diagnóstico não encontrado.',
+  NO_ACTIONS_LEFT: 'Não há mais ações sugeridas. Acesse os resultados ou o dashboard.',
   EVIDENCE_REQUIRED: 'Para concluir, registre a evidência (antes e depois).',
   DROP_REASON_REQUIRED: 'Ao descartar uma ação, informe o motivo.',
   CYCLE_CLOSED: 'Ciclo fechado. Somente leitura.',
@@ -52,25 +54,32 @@ export async function apiFetch(
 
   if (!response.ok) {
     let errorMessage = 'Erro na requisição';
+    let errorCode: string | undefined;
+    let errorPayload: Record<string, unknown> | undefined;
     try {
       const errorData = await response.json();
+      errorPayload = errorData;
+      errorCode = errorData.code;
       errorMessage =
         errorData.message_user ||
-        (errorData.code && API_ERROR_MESSAGES[errorData.code]) ||
+        (errorCode && API_ERROR_MESSAGES[errorCode]) ||
         errorData.error ||
         errorMessage;
     } catch {
       errorMessage = `Erro ${response.status}: ${response.statusText}`;
     }
-    
+
     // 401 → redirecionar para /login (será tratado no componente)
     if (response.status === 401) {
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       }
     }
-    
-    throw new ApiError(errorMessage, response.status);
+
+    const err = new ApiError(errorMessage, response.status);
+    (err as any).code = errorCode;
+    if (errorPayload?.missing) (err as any).missing = errorPayload.missing;
+    throw err;
   }
 
   // Se não tiver conteúdo, retornar null
@@ -80,4 +89,16 @@ export async function apiFetch(
   }
 
   return await response.json();
+}
+
+/** Resposta do GET /me */
+export interface MeResponse {
+  user_id: string;
+  email: string | null;
+  role: 'USER' | 'CONSULTOR' | 'ADMIN';
+}
+
+/** Busca dados do usuário autenticado (incluindo role) */
+export async function fetchMe(accessToken: string): Promise<MeResponse> {
+  return apiFetch('/me', {}, accessToken);
 }

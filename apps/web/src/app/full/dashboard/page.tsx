@@ -7,6 +7,11 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { humanizeActionStatus, labels } from '@/lib/uiCopy';
+import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+
+function displayActionTitle(title: string): string {
+  return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
+}
 
 interface ConsultantNote {
   note_type: string;
@@ -84,6 +89,7 @@ function FullDashboardContent() {
   const actionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const focusActionKey = searchParams.get('action_key');
+  const msgNoActionsLeft = searchParams.get('msg') === 'no_actions_left';
 
   useEffect(() => {
     if (!loading && data?.actions && focusActionKey && actionRefs.current[focusActionKey]) {
@@ -107,13 +113,13 @@ function FullDashboardContent() {
           params.set('assessment_id', aid);
           router.replace(`/full/dashboard?${params.toString()}`, { scroll: false });
         } else {
-          setError('Falha ao carregar diagnóstico FULL');
+          setError('Falha ao carregar diagnóstico');
           setLoading(false);
           return;
         }
       } catch (err: any) {
         const status = err instanceof ApiError ? err.status : 0;
-        setError((status === 404 || status === 500) ? 'Falha ao carregar diagnóstico FULL' : (err.message || 'Falha ao carregar diagnóstico FULL'));
+        setError((status === 404 || status === 500) ? 'Falha ao carregar diagnóstico' : (err.message || 'Falha ao carregar diagnóstico'));
         setLoading(false);
         return;
       }
@@ -276,9 +282,9 @@ function FullDashboardContent() {
         { method: 'POST' },
         session.access_token
       );
-      const newId = res?.new_assessment_id;
-      if (newId) {
-        router.replace(`/full/dashboard?assessment_id=${newId}&company_id=${companyId}`);
+      const aid = res?.assessment_id;
+      if (aid) {
+        router.replace(`/full/acoes?assessment_id=${aid}&company_id=${companyId}`);
       }
     } catch (err: any) {
       alert(err.message || 'Erro ao iniciar novo ciclo');
@@ -321,22 +327,7 @@ function FullDashboardContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
         <h1 style={{ margin: 0 }}>Dashboard FULL</h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {assessmentId && (
-            <Link
-              href={`/full/consultor?assessment_id=${assessmentId}&company_id=${companyId}`}
-              style={{
-                display: 'inline-block',
-                backgroundColor: '#6f42c1',
-                color: '#fff',
-                padding: '0.5rem 1rem',
-                borderRadius: '6px',
-                textDecoration: 'none',
-                fontSize: '0.9rem',
-              }}
-            >
-              {labels.consultantView}
-            </Link>
-          )}
+          {companyId && <SolicitarAjudaButton companyId={companyId} />}
           <Link
             href={`/full?company_id=${companyId}`}
             style={{
@@ -354,6 +345,11 @@ function FullDashboardContent() {
         </div>
       </div>
 
+      {msgNoActionsLeft && (
+        <div style={{ padding: '1rem', backgroundColor: '#fff3cd', color: '#856404', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid #ffc107' }}>
+          Não há mais ações sugeridas. Todas foram concluídas ou descartadas.
+        </div>
+      )}
       {error && (
         <div style={{ padding: '1rem', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '8px', marginBottom: '1.5rem' }}>
           {error}
@@ -390,7 +386,7 @@ function FullDashboardContent() {
               Progresso: {data.progress}
             </div>
             <div style={{ color: isClosed ? '#155724' : '#0c5460' }}>
-              {labels.nextStep}: {nextAction ? nextAction.title : 'Todas as ações foram concluídas ou descartadas.'}
+              {labels.nextStep}: {nextAction ? displayActionTitle(nextAction.title) : 'Todas as ações foram concluídas ou descartadas.'}
             </div>
             {canClose && (
               <button
@@ -418,26 +414,44 @@ function FullDashboardContent() {
                     ?.filter((a) => a.declared_gain)
                     .map((a) => (
                       <li key={a.action_key} style={{ marginBottom: '0.25rem' }}>
-                        {a.title}: {a.declared_gain}
+                        {displayActionTitle(a.title)}: {a.declared_gain}
                       </li>
                     ))}
                 </ul>
-                <button
-                  onClick={handleNewCycle}
-                  disabled={newCycleLoading}
-                  style={{
-                    marginTop: '1rem',
-                    padding: '0.5rem 1rem',
-                    borderRadius: '6px',
-                    border: 'none',
-                    backgroundColor: '#0d6efd',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  {newCycleLoading ? 'Iniciando...' : 'Iniciar novo ciclo'}
-                </button>
+                <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={handleNewCycle}
+                    disabled={newCycleLoading}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      border: 'none',
+                      backgroundColor: '#0d6efd',
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                    }}
+                    data-testid="cta-new-cycle"
+                  >
+                    {newCycleLoading ? 'Iniciando...' : 'Iniciar novo ciclo (mais 3 movimentos)'}
+                  </button>
+                  {assessmentId && (
+                    <Link
+                      href={`/full/resultados?company_id=${companyId}&assessment_id=${assessmentId}`}
+                      style={{
+                        display: 'inline-block',
+                        padding: '0.5rem 1rem',
+                        borderRadius: '6px',
+                        backgroundColor: '#6c757d',
+                        color: '#fff',
+                        textDecoration: 'none',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      Ver resultados do diagnóstico
+                    </Link>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -571,7 +585,7 @@ function ActionCard({
           <span style={{ marginLeft: '0.5rem', fontWeight: '600' }}>Ação {action.position}</span>
         </div>
       </div>
-      <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>{action.title}</h3>
+      <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>{displayActionTitle(action.title)}</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem', fontSize: '0.9rem', color: '#555' }}>
         <div><strong>Dono:</strong> {action.owner_name}</div>
         <div><strong>Métrica:</strong> {action.metric_text}</div>
@@ -688,7 +702,7 @@ function ActionModal({
     return (
       <div style={overlayStyle} onClick={onClose}>
         <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.confirmDod} — {action.title}</h3>
+          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.confirmDod} — {displayActionTitle(action.title)}</h3>
           <p style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>Confirme que todos os itens foram concluídos:</p>
           <ul style={{ marginBottom: '1rem', paddingLeft: '1.25rem' }}>
             {action.dod_checklist.map((item, i) => (
@@ -708,7 +722,7 @@ function ActionModal({
     return (
       <div style={overlayStyle} onClick={onClose}>
         <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: '0 0 1rem 0' }}>Registrar evidência — {action.title}</h3>
+          <h3 style={{ margin: '0 0 1rem 0' }}>Registrar evidência — {displayActionTitle(action.title)}</h3>
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.25rem', fontWeight: '600' }}>Descrição</label>
             <textarea
@@ -749,7 +763,7 @@ function ActionModal({
     return (
       <div style={overlayStyle} onClick={onClose}>
         <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.markDoneTitle} — {action.title}</h3>
+          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.markDoneTitle} — {displayActionTitle(action.title)}</h3>
           <p style={{ marginBottom: '1rem' }}>Confirma que requisitos e evidência estão completos?</p>
           <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
             <button onClick={onClose} style={btnStyle('#6c757d')}>Cancelar</button>
@@ -764,7 +778,7 @@ function ActionModal({
     return (
       <div style={overlayStyle} onClick={onClose}>
         <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.dropActionTitle} — {action.title}</h3>
+          <h3 style={{ margin: '0 0 1rem 0' }}>{labels.dropActionTitle} — {displayActionTitle(action.title)}</h3>
           <p style={{ marginBottom: '1rem', fontSize: '0.9rem' }}>Informe o motivo do descarte (obrigatório):</p>
           <textarea
             value={dropReason}
