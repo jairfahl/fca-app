@@ -29,6 +29,17 @@ function loadJson(name) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+const DEFAULT_SEGMENT_APPLICABILITY = ['C', 'I', 'S'];
+
+function ensureSegmentApplicability(arr) {
+  if (!Array.isArray(arr) || arr.length === 0) return DEFAULT_SEGMENT_APPLICABILITY;
+  const set = new Set(arr.map((s) => String(s)));
+  for (const seg of DEFAULT_SEGMENT_APPLICABILITY) {
+    if (!set.has(seg)) set.add(seg);
+  }
+  return Array.from(set).sort();
+}
+
 const PROCESSES = loadJson('processes');
 const QUESTIONS_RAW = loadJson('questions');
 const RECOMMENDATIONS = loadJson('recommendations');
@@ -42,7 +53,7 @@ for (const [process, items] of Object.entries(QUESTIONS_RAW)) {
     text: q.text,
     dim: q.dimension || q.dim,
     w: q.weight ?? q.w ?? 1,
-    segment_flags: q.segment_applicability || ['C', 'I', 'S'],
+    segment_flags: ensureSegmentApplicability(q.segment_applicability || q.segment_flags),
   }));
 }
 
@@ -52,6 +63,7 @@ async function seedProcessCatalog(client) {
   let inserted = 0;
   let updated = 0;
   for (const p of PROCESSES) {
+    const segmentApplicability = ensureSegmentApplicability(p.segment_applicability);
     const r = await client.query(
       'SELECT process_key FROM public.full_process_catalog WHERE process_key = $1',
       [p.process_key]
@@ -65,12 +77,12 @@ async function seedProcessCatalog(client) {
       if (hasQuickWin) {
         await client.query(
           `UPDATE public.full_process_catalog SET area_key=$1, segment_applicability=$2, protects_dimension=$3, protects_text=$4, owner_alert_text=$5, typical_impact_band=$6, typical_impact_text=$7, quick_win=$8, is_active=TRUE, updated_at=NOW() WHERE process_key=$9`,
-          [p.area_key, p.segment_applicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', quickWin, p.process_key]
+          [p.area_key, segmentApplicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', quickWin, p.process_key]
         );
       } else {
         await client.query(
           `UPDATE public.full_process_catalog SET area_key=$1, segment_applicability=$2, protects_dimension=$3, protects_text=$4, owner_alert_text=$5, typical_impact_band=$6, typical_impact_text=$7, is_active=TRUE, updated_at=NOW() WHERE process_key=$8`,
-          [p.area_key, p.segment_applicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', p.process_key]
+          [p.area_key, segmentApplicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', p.process_key]
         );
       }
       updated++;
@@ -81,7 +93,7 @@ async function seedProcessCatalog(client) {
             area_key, process_key, segment_applicability, protects_dimension, protects_text,
             owner_alert_text, typical_impact_band, typical_impact_text, quick_win, is_active
           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,TRUE)`,
-          [p.area_key, p.process_key, p.segment_applicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', quickWin]
+          [p.area_key, p.process_key, segmentApplicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO', quickWin]
         );
       } else {
         await client.query(
@@ -89,7 +101,7 @@ async function seedProcessCatalog(client) {
             area_key, process_key, segment_applicability, protects_dimension, protects_text,
             owner_alert_text, typical_impact_band, typical_impact_text, is_active
           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE)`,
-          [p.area_key, p.process_key, p.segment_applicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO']
+          [p.area_key, p.process_key, segmentApplicability, p.protects_dimension, p.protects_text, p.owner_alert_text, p.typical_impact_band, p.typical_impact_text || 'EM DEFINIÇÃO']
         );
       }
       inserted++;
@@ -241,7 +253,7 @@ async function seedFallbacks(client) {
         await client.query(
           `INSERT INTO public.full_recommendation_catalog (process_key, band, recommendation_key, title, owner_language_explanation, is_active)
           VALUES ($1,$2,$3,$4,$5,TRUE)`,
-          [process, band, recKey, `Recomendação padrão ${process} (${band})`, 'Fallback determinístico quando catálogo incompleto.']
+          [process, band, recKey, 'Recomendação em definição pelo método', 'Estamos finalizando esta recomendação.']
         );
         inserted++;
       }
@@ -258,7 +270,7 @@ async function seedFallbacks(client) {
         await client.query(
           `INSERT INTO public.full_action_catalog (process_key, band, action_key, title, benefit_text, metric_hint, dod_checklist, segment_applicability, is_active)
           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,TRUE)`,
-          [process, band, actKey, `Ação padrão ${process} (${band})`, 'Em definição.', 'A definir.', JSON.stringify(['Definir escopo', 'Executar conforme contexto', 'Documentar resultado']), ['C', 'I', 'S']]
+          [process, band, actKey, 'Ação em definição pelo método', 'Estamos finalizando esta recomendação.', 'A definir.', JSON.stringify(['Definir escopo', 'Executar conforme contexto', 'Documentar resultado']), ['C', 'I', 'S']]
         );
         inserted++;
       }

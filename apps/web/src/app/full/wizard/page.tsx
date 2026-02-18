@@ -1,9 +1,9 @@
 'use client';
 
-import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import { labels } from '@/lib/uiCopy';
@@ -58,6 +58,13 @@ const PROCESS_LABELS: Record<string, string> = {
   GESTAO: 'Gestão',
 };
 
+const PROTECTS_LABELS: Record<string, string> = {
+  DINHEIRO: 'Dinheiro',
+  CLIENTE: 'Cliente',
+  RISCO: 'Risco',
+  GARGALO: 'Gargalo',
+};
+
 export default function FullWizardPage() {
   return (
     <ProtectedRoute>
@@ -71,8 +78,11 @@ export default function FullWizardPage() {
 function FullWizardContent() {
   const { user, session } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const companyId = searchParams.get('company_id');
   const assessmentIdFromQuery = searchParams.get('assessment_id');
+  const processKeyFromQuery = searchParams.get('process_key');
+  const msgDiagIncomplete = searchParams.get('msg') === 'diag_incomplete';
 
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'blocked' | 'missing_company'>('loading');
   const [error, setError] = useState('');
@@ -82,6 +92,7 @@ function FullWizardContent() {
   const [answersMap, setAnswersMap] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const processList = useMemo(() => wizard?.processes || [], [wizard]);
   const activeProcess = useMemo(
@@ -114,12 +125,12 @@ function FullWizardContent() {
       setError('');
 
       const ent = await getEntitlement(companyId, session.access_token);
-      if (!assertFullAccess(ent)) {
+      if (!assertFullAccess(ent, user?.email)) {
         setState('blocked');
         return;
       }
 
-      const current = await apiFetch(`/full/assessments/current?company_id=${companyId}`, {}, session.access_token) as CurrentAssessment;
+      const current = await apiFetch(`/full/assessments/current?company_id=${companyId}&for_wizard=1`, {}, session.access_token) as CurrentAssessment;
       if (!current?.id) {
         setError('Falha ao carregar assessment FULL');
         setState('error');
@@ -138,7 +149,9 @@ function FullWizardContent() {
 
       const storageKey = `full_wizard_last_process:${companyId}:${current.id}`;
       const fromStorage = typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null;
-      const candidate = (assessmentIdFromQuery && current.id === assessmentIdFromQuery && fromStorage) ? fromStorage : null;
+      const candidate = processKeyFromQuery && cat?.processes?.some((p) => p.process_key === processKeyFromQuery)
+        ? processKeyFromQuery
+        : (assessmentIdFromQuery && current.id === assessmentIdFromQuery && fromStorage) ? fromStorage : null;
       const first = candidate || cat?.processes?.find((p) => p.process_key === fromStorage)?.process_key || cat?.processes?.[0]?.process_key || null;
       setActiveProcessKey(first);
 
@@ -147,7 +160,7 @@ function FullWizardContent() {
       setError(err?.message || 'Falha ao carregar wizard FULL');
       setState('error');
     }
-  }, [companyId, session?.access_token, assessmentIdFromQuery]);
+  }, [companyId, session?.access_token, assessmentIdFromQuery, processKeyFromQuery]);
 
   useEffect(() => {
     if (!companyId) {
@@ -180,19 +193,41 @@ function FullWizardContent() {
     );
   }, [session?.access_token, companyId, assessment?.id]);
 
-  const handleChange = (processKey: string, questionKey: string, value: number) => {
-    setAnswersMap((prev) => ({ ...prev, [keyOf(processKey, questionKey)]: value }));
-  };
+  const handleChange = useCallback(
+    (processKey: string, questionKey: string, value: number) => {
+      setAnswersMap((prev) => ({ ...prev, [keyOf(processKey, questionKey)]: value }));
 
-  const handleBlur = async (processKey: string, questionKey: string) => {
-    const val = answersMap[keyOf(processKey, questionKey)];
-    if (typeof val !== 'number') return;
-    try {
-      await saveQuestion(processKey, questionKey, val);
-    } catch (e) {
-      setError('Falha ao salvar resposta');
-    }
-  };
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(() => {
+        saveTimeoutRef.current = null;
+        saveQuestion(processKey, questionKey, value).catch(() => setError('Falha ao salvar resposta'));
+      }, 400);
+    },
+    [saveQuestion]
+  );
+
+  const handleBlur = useCallback(
+    async (processKey: string, questionKey: string) => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+      const val = answersMap[keyOf(processKey, questionKey)];
+      if (typeof val !== 'number') return;
+      try {
+        await saveQuestion(processKey, questionKey, val);
+      } catch (e) {
+        setError('Falha ao salvar resposta');
+      }
+    },
+    [answersMap, saveQuestion]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, []);
 
   const saveDraft = async () => {
     if (!activeProcess || !assessment?.id) return;
@@ -213,8 +248,35 @@ function FullWizardContent() {
     }
   };
 
+  /** Salva TODAS as respostas de todos os processos no DB antes do submit (refresh-safe). */
+  const saveAllDraft = async () => {
+    if (!assessment?.id || !processList.length) return;
+    setSaving(true);
+    try {
+      for (const p of processList) {
+        for (const q of p.questions) {
+          const val = answersMap[keyOf(p.process_key, q.question_key)];
+          if (typeof val === 'number') {
+            // eslint-disable-next-line no-await-in-loop
+            await saveQuestion(p.process_key, q.question_key, val);
+          }
+        }
+      }
+      setError('');
+    } catch (e) {
+      setError('Falha ao salvar respostas');
+      throw e;
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveAndContinue = async () => {
     await saveDraft();
+    if (allComplete) {
+      await handleSubmit();
+      return;
+    }
     if (!activeProcess) return;
     const idx = processList.findIndex((p) => p.process_key === activeProcess.process_key);
     const nextProcess = processList.slice(idx + 1).find((p) => (answeredCountByProcess[p.process_key] || 0) < p.questions.length)
@@ -234,16 +296,65 @@ function FullWizardContent() {
     setSubmitting(true);
     setError('');
     try {
+      await saveAllDraft();
       await apiFetch(
         `/full/assessments/${assessment.id}/submit?company_id=${companyId}`,
         { method: 'POST' },
         session.access_token
       );
       if (typeof window !== 'undefined') {
-        window.location.href = `/full?company_id=${companyId}`;
+        try {
+          const pendingRes = await apiFetch(
+            `/full/causes/pending?assessment_id=${assessment.id}&company_id=${companyId}`,
+            {},
+            session.access_token
+          );
+          const pendingList = pendingRes?.pending || [];
+          if (pendingList.length > 0) {
+            window.location.href = `/full/resultados?company_id=${companyId}&assessment_id=${assessment.id}&msg=cause_pending`;
+            return;
+          }
+        } catch {
+          // ignore
+        }
+        window.location.href = `/full/dashboard?company_id=${companyId}&assessment_id=${assessment.id}`;
       }
     } catch (e: any) {
-      setError(e?.message || 'Falha ao submeter');
+      const code = (e as any)?.code;
+      const missing = (e as any)?.missing as Array<{ process_key: string; missing_question_keys?: string[] }> | undefined;
+      const missingProcessKeys = (e as any)?.missing_process_keys as string[] | undefined;
+      const debugId = (e as any)?.debug_id as string | undefined;
+
+      if (code === 'DIAG_INCOMPLETE') {
+        const processKey = missingProcessKeys?.[0] || missing?.[0]?.process_key || firstIncompleteProcessKey;
+        if (processKey) {
+          setActiveProcessKey(processKey);
+          const label = PROCESS_LABELS[processKey] || processKey;
+          setError(`Faltam respostas em ${label}. Conclua para enviar.`);
+        } else {
+          setError(e?.message || 'Faltam respostas. Conclua para enviar.');
+        }
+        return;
+      }
+
+      if (code === 'FINDINGS_FAILED') {
+        setError(debugId
+          ? `Falha ao concluir diagnóstico (ref: ${debugId}). Tente novamente ou contate o suporte.`
+          : 'Falha ao concluir diagnóstico. Tente novamente ou contate o suporte.');
+        return;
+      }
+
+      if (code === 'DIAG_NOT_DRAFT' || code === 'DIAG_ALREADY_SUBMITTED') {
+        if (companyId && assessment?.id) {
+          window.location.href = `/full/dashboard?company_id=${companyId}&assessment_id=${assessment.id}&msg=diag_already_submitted`;
+          return;
+        }
+      }
+
+      setError(code === 'DIAG_NOT_READY' ? (e?.message || 'Faltam respostas.') : (e?.message_user || e?.message || 'Falha ao enviar diagnóstico. Tente novamente.'));
+      if (code === 'DIAG_NOT_READY' && firstIncompleteProcessKey) {
+        setActiveProcessKey(firstIncompleteProcessKey);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -269,7 +380,17 @@ function FullWizardContent() {
           <Link href={`/full/dashboard?company_id=${companyId}&assessment_id=${assessment?.id || ''}`} style={linkBtn('#198754')}>Dashboard</Link>
         </div>
       </div>
+      {msgDiagIncomplete && (
+        <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107' }}>
+          Faltam respostas em {activeProcess ? (PROCESS_LABELS[activeProcess.process_key] || activeProcess.process_key) : 'este bloco'}. Conclua para enviar.
+        </div>
+      )}
       {error && <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24' }}>{error}</div>}
+      {assessment?.status === 'CLOSED' && (
+        <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: '#d4edda', color: '#155724', border: '1px solid #c3e6cb' }}>
+          Diagnóstico concluído. Para um novo ciclo, inicie pelo Dashboard.
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem' }}>
         <div style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '0.75rem', background: '#fff' }}>
@@ -310,7 +431,7 @@ function FullWizardContent() {
             <>
               <h2 style={{ marginTop: 0 }}>{PROCESS_LABELS[activeProcess.process_key] || activeProcess.process_key}</h2>
               <div style={{ border: '1px solid #e9ecef', borderRadius: '8px', padding: '0.75rem', background: '#f8f9fa', marginBottom: '1rem' }}>
-                <div><strong>O que isso protege:</strong> {activeProcess.o_que_protege}</div>
+                <div><strong>O que isso protege:</strong> {PROTECTS_LABELS[activeProcess.o_que_protege] || activeProcess.o_que_protege}</div>
                 <div><strong>Sinal de alerta do dono:</strong> {activeProcess.sinal_alerta}</div>
                 <div><strong>Impacto típico:</strong> {activeProcess.impacto_tipico}</div>
               </div>
@@ -322,9 +443,6 @@ function FullWizardContent() {
                   return (
                     <div key={q.question_key} style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '0.75rem' }}>
                       <div style={{ marginBottom: '0.5rem' }}>{q.question_text}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#6c757d', marginBottom: '0.5rem' }}>
-                        Dimensão: {q.dimension || 'EM DEFINIÇÃO'} · Eixo de custo: {q.cost_axis || 'TRAVAMENTO'}
-                      </div>
                       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                         <input
                           type="range"
@@ -333,6 +451,7 @@ function FullWizardContent() {
                           value={typeof value === 'number' ? value : 0}
                           onChange={(e) => handleChange(activeProcess.process_key, q.question_key, Number(e.target.value))}
                           onBlur={() => handleBlur(activeProcess.process_key, q.question_key)}
+                          disabled={assessment?.status === 'CLOSED'}
                           style={{ width: 220 }}
                         />
                         <span style={{ minWidth: '2rem', textAlign: 'center', fontWeight: 600 }}>
@@ -345,13 +464,20 @@ function FullWizardContent() {
               </div>
 
               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
-                <button onClick={saveDraft} disabled={saving || submitting} style={btn('#6c757d')}>
+                <button onClick={saveDraft} disabled={saving || submitting || assessment?.status === 'CLOSED'} style={btn('#6c757d')}>
                   {saving ? 'Salvando...' : 'Salvar rascunho'}
                 </button>
-                <button onClick={saveAndContinue} disabled={saving || submitting} style={btn('#0d6efd')}>
+                <button onClick={saveAndContinue} disabled={saving || submitting || assessment?.status === 'CLOSED'} style={btn('#0d6efd')}>
                   Salvar e continuar
                 </button>
-                {allComplete && (
+                {allComplete && (assessment?.status === 'CLOSED' || assessment?.status === 'SUBMITTED') ? (
+                  <Link
+                    href={companyId && assessment?.id ? `/full/dashboard?company_id=${companyId}&assessment_id=${assessment.id}` : (companyId ? `/full?company_id=${companyId}` : '/full')}
+                    style={linkBtn('#198754')}
+                  >
+                    {assessment?.status === 'CLOSED' ? 'Ver resultados' : 'Ir ao dashboard'}
+                  </Link>
+                ) : allComplete && (
                   <button onClick={handleSubmit} disabled={saving || submitting} style={btn('#198754')}>
                     {submitting ? 'Enviando...' : 'Submeter diagnóstico'}
                   </button>

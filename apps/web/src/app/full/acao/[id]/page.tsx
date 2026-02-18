@@ -5,8 +5,13 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { apiFetch } from '@/lib/api';
 import { humanizeActionStatus, labels } from '@/lib/uiCopy';
+
+function displayActionTitle(title: string): string {
+  return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
+}
+
+import { apiFetch } from '@/lib/api';
 
 type DashboardAction = {
   action_key: string;
@@ -176,7 +181,7 @@ function FullAcaoContent() {
 
       {(state === 'ready' || state === 'saving') && action && (
         <>
-          <h1 style={{ marginTop: 0 }}>{action.title}</h1>
+          <h1 style={{ marginTop: 0 }}>{displayActionTitle(action.title)}</h1>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
             <div><strong>Dono:</strong> {action.owner_name}</div>
             <div><strong>Métrica:</strong> {action.metric_text}</div>
@@ -206,7 +211,7 @@ function FullAcaoContent() {
                 background: action.dod_confirmed ? '#adb5bd' : '#0d6efd', color: '#fff'
               }}
             >
-              {action.dod_confirmed ? 'Checklist confirmado' : labels.confirmDod}
+              {action.dod_confirmed ? labels.checklistConfirmed : labels.confirmDod}
             </button>
           </section>
 
@@ -220,17 +225,32 @@ function FullAcaoContent() {
               </>
             ) : (
               <>
+                {action.cause_label && (
+                  <p style={{ marginBottom: '0.75rem', fontSize: '0.9rem', color: '#6c757d' }}>
+                    Ação de mecanismo: use texto curto e métrica simples ({action.metric_text || 'métrica'}).
+                  </p>
+                )}
                 <label style={{ display: 'block', marginBottom: '0.5rem' }}>
                   Evidência
                   <textarea value={evidenceText} onChange={(e) => setEvidenceText(e.target.value)} rows={2} style={{ width: '100%', marginTop: '0.2rem' }} />
                 </label>
                 <label style={{ display: 'block', marginBottom: '0.5rem' }}>
                   Antes
-                  <input value={beforeText} onChange={(e) => setBeforeText(e.target.value)} style={{ width: '100%', marginTop: '0.2rem' }} />
+                  <input
+                    value={beforeText}
+                    onChange={(e) => setBeforeText(e.target.value)}
+                    placeholder={action.cause_label ? `Ex: 0 ${action.metric_text || 'métrica'}` : 'Ex: situação antes'}
+                    style={{ width: '100%', marginTop: '0.2rem' }}
+                  />
                 </label>
                 <label style={{ display: 'block', marginBottom: '0.7rem' }}>
                   Depois
-                  <input value={afterText} onChange={(e) => setAfterText(e.target.value)} style={{ width: '100%', marginTop: '0.2rem' }} />
+                  <input
+                    value={afterText}
+                    onChange={(e) => setAfterText(e.target.value)}
+                    placeholder={action.cause_label ? `Ex: 15 ${action.metric_text || 'métrica'}` : 'Ex: situação após'}
+                    style={{ width: '100%', marginTop: '0.2rem' }}
+                  />
                 </label>
                 <button
                   onClick={saveEvidence}

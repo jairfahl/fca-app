@@ -1,4 +1,10 @@
-# Cursor Rules - Desabilitar Worktrees Automáticos
+# Cursor Rules
 
-# Trabalhar diretamente no repositório principal
-# Não usar worktrees automáticos do Cursor
+## Worktrees
+- Trabalhar diretamente no repositório principal
+- Não usar worktrees automáticos do Cursor
+
+## Agentes
+- Seguir sempre as instruções em AGENTS.md (raiz)
+- Regras por contexto: apps/api/AGENTS.md, apps/web/AGENTS.md, docs/AGENTS.md
+- Regras Cursor em .cursor/rules/ (aplicadas automaticamente por glob)

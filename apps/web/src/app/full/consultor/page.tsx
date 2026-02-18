@@ -8,12 +8,18 @@ import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { formatPlanProgress, humanizeActionStatus, humanizeSegment, humanizeStatus, labels } from '@/lib/uiCopy';
 
+function displayActionTitle(title: string): string {
+  return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
+}
+
 interface ConsultantNote {
   id?: string;
   note_type: string;
   note_text: string;
   created_at: string;
 }
+
+type WhyItem = { question_key: string; answer: number | string; label?: string };
 
 interface DashboardAction {
   position: number;
@@ -24,6 +30,21 @@ interface DashboardAction {
   checkpoint_date: string;
   status: string;
   declared_gain: string | null;
+  cause_label?: string | null;
+  why?: WhyItem[] | null;
+}
+
+const LIKERT_LABELS: Record<string, string> = {
+  DISCORDO_PLENAMENTE: 'Discordo plenamente',
+  DISCORDO: 'Discordo',
+  NEUTRO: 'Neutro',
+  CONCORDO: 'Concordo',
+  CONCORDO_PLENAMENTE: 'Concordo plenamente',
+};
+
+function formatWhyAnswer(a: number | string): string {
+  if (typeof a === 'number') return `${a}/10`;
+  return LIKERT_LABELS[String(a)] || String(a);
 }
 
 interface ConsultantData {
@@ -248,7 +269,7 @@ function ConsultorContent() {
                     backgroundColor: '#fff',
                   }}
                 >
-                  <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Ação {action.position}: {action.title}</h3>
+                  <h3 style={{ margin: '0 0 0.75rem 0', fontSize: '1.1rem' }}>Ação {action.position}: {displayActionTitle(action.title)}</h3>
                   <table style={{ width: '100%', fontSize: '0.9rem', marginBottom: '1rem' }}>
                     <tbody>
                       <tr>
@@ -269,6 +290,24 @@ function ConsultorContent() {
                       </tr>
                     </tbody>
                   </table>
+
+                  {(action.cause_label || (action.why && action.why.length > 0)) && (
+                    <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#f8f9fa', borderRadius: '6px', fontSize: '0.9rem' }}>
+                      {action.cause_label && (
+                        <div style={{ marginBottom: '0.5rem' }}><strong>Causa provável:</strong> {action.cause_label}</div>
+                      )}
+                      {action.why && action.why.length > 0 && (
+                        <div>
+                          <strong>Respostas que sustentam:</strong>
+                          <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                            {action.why.map((w, i) => (
+                              <li key={i}>{w.label || w.question_key}: {formatWhyAnswer(w.answer)}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #eee' }}>
                     <strong>Notas de acompanhamento</strong>

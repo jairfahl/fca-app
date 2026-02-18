@@ -10,6 +10,8 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   DIAG_INCOMPLETE: 'Faltam respostas obrigatórias. Preencha todas as perguntas.',
   DIAG_NOT_FOUND: 'Diagnóstico não encontrado.',
   NO_ACTIONS_LEFT: 'Não há mais ações sugeridas. Acesse os resultados ou o dashboard.',
+  CAUSE_PENDING: 'Responda às perguntas de causa antes de escolher suas ações.',
+  MECHANISM_ACTION_REQUIRED: 'Sem atacar a causa, você volta ao mesmo problema. Inclua pelo menos uma ação do mecanismo indicado.',
   EVIDENCE_REQUIRED: 'Para concluir, registre a evidência (antes e depois).',
   DROP_REASON_REQUIRED: 'Ao descartar uma ação, informe o motivo.',
   CYCLE_CLOSED: 'Ciclo fechado. Somente leitura.',
@@ -79,6 +81,10 @@ export async function apiFetch(
     const err = new ApiError(errorMessage, response.status);
     (err as any).code = errorCode;
     if (errorPayload?.missing) (err as any).missing = errorPayload.missing;
+    if (errorPayload?.missing_process_keys) (err as any).missing_process_keys = errorPayload.missing_process_keys;
+    if (errorPayload?.debug_id) (err as any).debug_id = errorPayload.debug_id;
+    if (errorPayload?.message_user) (err as any).message_user = errorPayload.message_user;
+    if (errorPayload?.mechanism_action_keys) (err as any).mechanism_action_keys = errorPayload.mechanism_action_keys;
     throw err;
   }
 

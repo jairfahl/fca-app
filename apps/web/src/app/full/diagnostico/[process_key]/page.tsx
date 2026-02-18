@@ -63,6 +63,7 @@ function FullDiagnosticoProcessContent() {
   const params = useParams();
   const processKey = params?.process_key as string;
   const companyId = searchParams.get('company_id');
+  const msgDiagIncomplete = searchParams.get('msg') === 'diag_incomplete';
 
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'blocked' | 'missing_company'>('loading');
   const [error, setError] = useState('');
@@ -80,7 +81,7 @@ function FullDiagnosticoProcessContent() {
       setError('');
 
       const entitlement = await getEntitlement(companyId, session.access_token);
-      if (!assertFullAccess(entitlement)) {
+      if (!assertFullAccess(entitlement, user?.email)) {
         setState('blocked');
         return;
       }
@@ -245,6 +246,12 @@ function FullDiagnosticoProcessContent() {
 
       {state === 'loading' && (
         <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando...</div>
+      )}
+
+      {msgDiagIncomplete && (
+        <div style={{ marginBottom: '1rem', padding: '0.75rem', borderRadius: '8px', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107' }}>
+          Faltam respostas neste bloco. Conclua para gerar ações.
+        </div>
       )}
 
       {state === 'error' && (

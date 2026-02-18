@@ -3,9 +3,9 @@ const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireFullEntitlement } = require('../middleware/requireFullEntitlement');
-const { canAccessFull, canActivateFullTest } = require('../lib/canAccessFull');
+const { canAccessFull, isFullBypassUser } = require('../lib/canAccessFull');
 const { ensureConsultantOrOwnerAccess } = require('../lib/companyAccess');
-const { getOrCreateCurrentFullAssessment } = require('../lib/fullAssessment');
+const { getOrCreateCurrentFullAssessment, FullCurrentError, logFullCurrentError } = require('../lib/fullAssessment');
 
 /**
  * GET /entitlements
@@ -138,20 +138,20 @@ router.post('/paywall/events', requireAuth, async (req, res) => {
 
 /**
  * POST /entitlements/full/activate_test
- * Ativa entitlement FULL para testes (whitelist ou FULL_TEST_MODE).
+ * Ativa entitlement FULL em modo teste. Permitido APENAS para fca@fca.com.
  * Requer que o usuário seja dono da company.
  */
 router.post('/entitlements/full/activate_test', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const userEmail = req.user.email || null;
-    const companyId = req.query.company_id || req.body.company_id;
+    const companyId = (req.query.company_id || req.body.company_id || '').trim();
 
-    if (!companyId || typeof companyId !== 'string' || companyId.trim().length === 0) {
+    if (!companyId || companyId.length === 0) {
       return res.status(400).json({ error: 'company_id é obrigatório' });
     }
 
-    if (!canActivateFullTest(userEmail)) {
+    const userEmail = await resolveUserEmail(userId, req.user.email, supabase) || req.user.email || null;
+    if (!isFullBypassUser(userEmail)) {
       return res.status(403).json({ error: 'ativar FULL em modo teste não autorizado' });
     }
 
@@ -167,7 +167,7 @@ router.post('/entitlements/full/activate_test', requireAuth, async (req, res) =>
       return res.status(404).json({ error: 'company não encontrada ou não pertence ao usuário' });
     }
 
-    const { data: entitlement, error: upsertErr } = await supabase
+    const { error: upsertErr } = await supabase
       .schema('public')
       .from('entitlements')
       .upsert(
@@ -179,18 +179,21 @@ router.post('/entitlements/full/activate_test', requireAuth, async (req, res) =>
           source: 'MANUAL',
         },
         { onConflict: 'user_id,company_id' }
-      )
-      .select()
-      .single();
+      );
 
     if (upsertErr) {
       console.error('Erro ao ativar entitlement:', upsertErr.message);
       return res.status(500).json({ error: 'erro ao ativar entitlement' });
     }
 
-    console.log(`ENTITLEMENT_ACTIVATE_TEST user_id=${userId} company_id=${companyId}`);
+    console.log('[AUDIT] entitlement_activate_test', { company_id: companyId, email: userEmail, result: 'FULL/ACTIVE' });
 
-    return res.status(201).json({ ok: true, entitlement: 'FULL/ACTIVE', raw: entitlement });
+    return res.status(200).json({
+      company_id: companyId,
+      plan: 'FULL',
+      status: 'ACTIVE',
+      ok: true,
+    });
   } catch (error) {
     console.error('Erro ao ativar FULL em modo teste:', error.message);
     return res.status(500).json({ error: 'erro inesperado' });
@@ -284,9 +287,21 @@ router.get('/full/diagnostic', requireAuth, requireFullEntitlement, async (req, 
       return res.status(404).json({ error: 'company não encontrada ou sem acesso' });
     }
 
-    const result = await getOrCreateCurrentFullAssessment(companyId, userId);
-    if (!result) {
-      return res.status(500).json({ error: 'erro ao obter ou criar diagnóstico FULL' });
+    let result;
+    try {
+      result = await getOrCreateCurrentFullAssessment(companyId, userId);
+    } catch (err) {
+      if (err instanceof FullCurrentError) {
+        logFullCurrentError(err.phase, companyId, userId, req.user?.email, err.originalError);
+        const isDev = process.env.NODE_ENV !== 'production';
+        return res.status(500).json({
+          code: 'FULL_CURRENT_FAILED',
+          error: err.message,
+          message_user: 'Não foi possível carregar o diagnóstico. Tente novamente.',
+          ...(isDev && { phase: err.phase }),
+        });
+      }
+      throw err;
     }
 
     const { assessment, company: companyData } = result;

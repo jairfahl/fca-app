@@ -1,0 +1,26 @@
+---
+description: Padrões de backend — estados, erros, persistência, idempotência
+globs: apps/api/**/*
+alwaysApply: false
+---
+
+# Padrões de backend (apps/api/AGENTS.md)
+
+## Estados e transições
+- Diagnóstico FULL: DRAFT, SUBMITTED, CLOSED (internos). UI nunca vê rótulos crus; backend oferece campos amigáveis.
+
+## Erros
+- Respostas 4xx/5xx: `code` (máquina), `message_user` (humano), `error` (técnico).
+- Ex.: DIAG_NOT_READY → message_user objetiva e acionável.
+
+## Acesso FULL
+- Entitlement checado no backend. Admin override é backend-only.
+
+## Persistência
+- Respostas FULL: assessment_id + company_id + user_id.
+- Evidência: write-once, baseline antes/depois.
+
+## Anti-padrões proibidos
+- Lógica de elegibilidade no frontend.
+- 400 por duplicidade quando deveria ser idempotente (retornar 200 com existente).
+- Gerar texto fora de catálogo para recomendações (determinístico e auditável).

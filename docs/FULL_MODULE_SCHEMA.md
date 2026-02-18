@@ -29,6 +29,9 @@ Arquivo: `db/migrations/014_full_module_schema.sql`
 | `full_selected_actions` | 3 ações selecionadas (position 1-3, status NOT_STARTED/IN_PROGRESS/DONE/DROPPED) |
 | `full_action_evidence` | Evidência write-once (evidence_text, before_baseline, after_result) |
 | `full_consultant_notes` | Notas do consultor (ORIENTACAO, IMPEDIMENTO, PROXIMO_PASSO) |
+| `full_gap_instances` | Gaps detectados no submit (assessment_id, gap_id, status CAUSE_PENDING/CAUSE_CLASSIFIED) |
+| `full_cause_answers` | Respostas LIKERT por pergunta de causa (assessment_id, gap_id, q_id) |
+| `full_gap_causes` | Classificação causa primária/secundária por gap (cause_primary, evidence_json) |
 
 ### 015–019 — Evolução
 
@@ -39,6 +42,18 @@ Arquivo: `db/migrations/014_full_module_schema.sql`
 | 017 | `full_findings.sql` | Findings persistidos (3 vazamentos + 3 alavancas por assessment) |
 | 018 | `full_catalog_segment_and_microvalue.sql` | segment_applicability (C/I/S), typical_impact_text (faixa) |
 | 019 | `full_process_quick_win.sql` | quick_win em full_process_catalog (alavancas preferem) |
+
+### 020–026 — Root Cause e Ciclo
+
+| Migração | Arquivo | Descrição |
+|----------|---------|-----------|
+| 020 | `full_cycle_history.sql` | Histórico de ciclos fechados |
+| 021 | `full_fallback_honest_titles.sql` | Títulos honestos para fallbacks de catálogo |
+| 022 | `help_requests.sql` | Tabela de solicitações de ajuda |
+| 023 | `full_cause_engine.sql` | Motor de causa (taxonomia, mecanismos, question sets) |
+| 024 | `full_root_cause_schema.sql` | full_gap_instances, full_cause_answers, full_gap_causes |
+| 025 | `full_gap_instances_status.sql` | status CAUSE_PENDING / CAUSE_CLASSIFIED em full_gap_instances |
+| 026 | `full_value_events.sql` | Eventos de valor |
 
 ### Constraints principais
 

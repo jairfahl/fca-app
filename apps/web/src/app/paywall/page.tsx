@@ -31,7 +31,7 @@ function PaywallContent() {
     getEntitlement(companyId, session.access_token).then(setEntitlement);
   }, [companyId, session?.access_token]);
 
-  const canAccessFull = assertFullAccess(entitlement);
+  const canAccessFull = assertFullAccess(entitlement, user?.email);
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
@@ -69,6 +69,7 @@ function PaywallContent() {
               companyId={companyId}
               entitlement={entitlement}
               accessToken={session?.access_token ?? null}
+              userEmail={user?.email}
               variant="primary"
               labelAuthorized={entitlement?.is_admin ? 'Acessar FULL (admin)' : 'Acessar FULL (modo teste)'}
             />

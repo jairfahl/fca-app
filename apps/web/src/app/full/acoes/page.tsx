@@ -67,6 +67,8 @@ function FullAcoesContent() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [requiredCountFromApi, setRequiredCountFromApi] = useState<number>(3);
   const [remainingCountFromApi, setRemainingCountFromApi] = useState<number>(0);
+  const [hasCauseCoverage, setHasCauseCoverage] = useState<boolean | null>(null);
+  const [mechanismRequiredActionKeys, setMechanismRequiredActionKeys] = useState<string[]>([]);
   const [selected, setSelected] = useState<DraftSelection[]>([]);
   const [conteudoDefinicaoToast, setConteudoDefinicaoToast] = useState(false);
   const actionKeyRef = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -97,17 +99,34 @@ function FullAcoesContent() {
           {},
           session.access_token
         );
+        const aid = data?.assessment_id || assessmentId;
+        if (aid && companyId) {
+          try {
+            const pendingRes = await apiFetch(
+              `/full/causes/pending?assessment_id=${aid}&company_id=${companyId}`,
+              {},
+              session.access_token
+            );
+            const pendingList = pendingRes?.pending || [];
+            if (pendingList.length > 0) {
+              router.replace(`/full/resultados?company_id=${companyId}&assessment_id=${aid}&msg=cause_pending`);
+              return;
+            }
+          } catch {
+            // ignore - seguir para actions
+          }
+        }
         setSuggestions(data?.suggestions || []);
         const rc = typeof data?.required_count === 'number' ? data.required_count : Math.min(3, (data?.suggestions || []).length);
         const rem = typeof data?.remaining_count === 'number' ? data.remaining_count : (data?.suggestions || []).length;
         setRequiredCountFromApi(Math.max(1, Math.min(3, rc)));
         setRemainingCountFromApi(Math.max(0, rem));
+        setHasCauseCoverage(typeof data?.has_cause_coverage === 'boolean' ? data.has_cause_coverage : null);
+        setMechanismRequiredActionKeys(Array.isArray(data?.mechanism_required_action_keys) ? data.mechanism_required_action_keys : []);
         if (rem === 0 && companyId) {
-          const aid = data?.assessment_id || assessmentId;
           router.replace(aid ? `/full/dashboard?company_id=${companyId}&assessment_id=${aid}&msg=no_actions_left` : `/full/dashboard?company_id=${companyId}&msg=no_actions_left`);
           return;
         }
-        const aid = data?.assessment_id || assessmentId;
         if (aid && !assessmentId && typeof window !== 'undefined') {
           setResolvedAssessmentId(aid);
           const params = new URLSearchParams(window.location.search);
@@ -219,7 +238,11 @@ function FullAcoesContent() {
         router.replace(`/full/dashboard?company_id=${companyId}&assessment_id=${effectiveAssessmentId}&msg=no_actions_left`);
         return;
       }
+      if (err?.code === 'MECHANISM_ACTION_REQUIRED' && Array.isArray((err as any).mechanism_action_keys)) {
+        setMechanismRequiredActionKeys((err as any).mechanism_action_keys);
+      }
       setError(err?.message || 'Falha ao salvar plano');
+      setErrorCode(err?.code);
       setState('ready');
     }
   };
@@ -297,37 +320,44 @@ function FullAcoesContent() {
             </div>
           )}
 
-          {suggestions.length === 0 ? (
+          {hasCauseCoverage === false && (
             <div
               style={{
-                padding: '2rem',
+                padding: '0.75rem 1rem',
                 borderRadius: '8px',
-                background: '#f8f9fa',
-                border: '1px solid #dee2e6',
-                textAlign: 'center',
+                background: '#e7f3ff',
+                color: '#084298',
+                marginBottom: '1rem',
+                border: '1px solid #b6d4fe',
               }}
             >
-              <h2 style={{ marginTop: 0, marginBottom: '0.75rem', fontSize: '1.25rem' }}>Sem recomendações com encaixe claro</h2>
-              <p style={{ color: '#6c757d', marginBottom: '1.5rem' }}>
-                {labels.noRecommendationsMessage}
-              </p>
-              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                <Link
-                  href={companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados'}
-                  style={{ background: '#0d6efd', color: '#fff', padding: '0.6rem 1.25rem', borderRadius: '6px', textDecoration: 'none', fontWeight: 600 }}
-                >
-                  {labels.verResultados}
-                </Link>
-                {companyId && (
-                  <SolicitarAjudaButton
-                    companyId={companyId}
-                    label="Solicitar ajuda"
-                    style={{ padding: '0.6rem 1.25rem', fontWeight: 600 }}
-                  />
-                )}
-              </div>
+              Cobertura parcial do método: nenhum gap priorizado teve causa classificada. As escolhas abaixo são válidas.
             </div>
-          ) : (
+          )}
+
+          {mechanismRequiredActionKeys.length > 0 && (
+            <div
+              style={{
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                background: '#fff3cd',
+                color: '#856404',
+                marginBottom: '1rem',
+                border: '1px solid #ffc107',
+              }}
+            >
+              <strong>Inclua pelo menos uma ação do mecanismo indicado:</strong>{' '}
+              {mechanismRequiredActionKeys
+                .map((key) => suggestions.find((s) => s.action_key === key)?.title || key)
+                .filter(Boolean)
+                .join(', ')}
+              {mechanismRequiredActionKeys.some((k) => !suggestions.find((s) => s.action_key === k)) && (
+                <span style={{ fontSize: '0.9rem' }}> (ações marcadas com "Obrigatório" abaixo)</span>
+              )}
+            </div>
+          )}
+
+          {suggestions.length > 0 && (
             <>
               {error && <div style={{ padding: '1rem', borderRadius: '8px', background: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>{error}</div>}
               {suggestions.length < 4 && (
@@ -344,6 +374,7 @@ function FullAcoesContent() {
                 {suggestions.map((s) => {
                   const checked = selectedSet.has(s.action_key);
                   const isFocused = s.action_key === focusActionKey;
+                  const isMechanismRequired = mechanismRequiredActionKeys.includes(s.action_key);
                   const whyText = s.why?.length ? `Por que apareceu: ${s.why.map((w) => `${w.label || w.question_key} (${w.answer}/10)`).join('; ')}` : null;
                   return (
                     <button
@@ -351,16 +382,21 @@ function FullAcoesContent() {
                       ref={(el) => { actionKeyRef.current[s.action_key] = el; }}
                       onClick={() => toggleSelect(s)}
                       style={{
-                        border: checked ? '2px solid #0d6efd' : isFocused ? '2px solid #198754' : '1px solid #dee2e6',
-                        background: isFocused ? '#e7f5ec' : '#fff',
+                        border: checked ? '2px solid #0d6efd' : isFocused ? '2px solid #198754' : isMechanismRequired ? '2px solid #ffc107' : '1px solid #dee2e6',
+                        background: isFocused ? '#e7f5ec' : isMechanismRequired ? '#fffbf0' : '#fff',
                         borderRadius: '8px',
                         padding: '0.9rem',
                         textAlign: 'left',
                         cursor: 'pointer',
                       }}
                     >
-                      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#6c757d', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         {(PROCESS_LABELS[s.process_key] || s.process_key)} · {humanizeLevelBand(s.nivel_ui || s.band)}
+                        {isMechanismRequired && (
+                          <span style={{ background: '#ffc107', color: '#856404', padding: '0.15rem 0.4rem', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 600 }}>
+                            Obrigatório
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontWeight: 600 }}>{s.title}</div>
                       {s.benefit_text && <div style={{ marginTop: '0.35rem', color: '#555', fontSize: '0.9rem' }}>{s.benefit_text}</div>}
@@ -437,6 +473,16 @@ function FullAcoesContent() {
               </button>
             </div>
           </>
+          )}
+          {suggestions.length === 0 && (
+            <p style={{ color: '#6c757d', marginTop: '1rem' }}>
+              <Link
+                href={companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados'}
+                style={{ color: '#0d6efd', textDecoration: 'none' }}
+              >
+                Ver resultados
+              </Link>
+            </p>
           )}
         </>
       )}

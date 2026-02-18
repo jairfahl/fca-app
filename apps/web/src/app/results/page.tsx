@@ -265,7 +265,7 @@ function ResultsContent() {
     return 'Mesmo com bom desempenho, padronizar agora ajuda a manter consistência.';
   };
 
-  const hasFullAccess = assertFullAccess(entitlement);
+  const hasFullAccess = assertFullAccess(entitlement, user?.email);
 
   if (!assessmentId) {
     return (
@@ -332,6 +332,7 @@ function ResultsContent() {
             companyId={resultsCompanyId}
             entitlement={entitlement}
             accessToken={session?.access_token ?? null}
+            userEmail={user?.email}
             variant="secondary"
           />
         )}
@@ -636,6 +637,7 @@ function ResultsContent() {
                 companyId={resultsCompanyId || ''}
                 entitlement={entitlement}
                 accessToken={session?.access_token ?? null}
+                userEmail={user?.email}
                 variant="secondary"
               />
             </div>

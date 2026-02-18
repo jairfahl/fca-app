@@ -3,13 +3,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Entitlement, activateFullTest } from '@/lib/entitlement';
+import { Entitlement, activateFullTest, getEntitlement } from '@/lib/entitlement';
 import { assertFullAccess } from '@/lib/fullGuard';
 
 type AssinarFullButtonProps = {
   companyId: string;
   entitlement: Entitlement | null;
   accessToken: string | null;
+  /** Email do usuário para bypass de teste (fca@fca.com) */
+  userEmail?: string | null;
   /** Estilo do link/botão quando vai para paywall */
   variant?: 'primary' | 'secondary';
   /** Label quando autorizado (modo teste) */
@@ -38,13 +40,15 @@ export function AssinarFullButton({
   companyId,
   entitlement,
   accessToken,
+  userEmail,
   variant = 'secondary',
   labelAuthorized = 'Assinar FULL',
   labelPaywall = 'Assinar FULL',
 }: AssinarFullButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const canAccess = assertFullAccess(entitlement);
+  const [error, setError] = useState<string | null>(null);
+  const canAccess = assertFullAccess(entitlement, userEmail);
   const hasPersistedFull = entitlement?.plan === 'FULL' && entitlement?.status === 'ACTIVE';
 
   const baseStyle = {
@@ -92,23 +96,37 @@ export function AssinarFullButton({
   const handleActivateAndGo = async () => {
     if (!accessToken || loading) return;
     setLoading(true);
+    setError(null);
     try {
       await activateFullTest(companyId, accessToken);
-      router.push(`/full?company_id=${companyId}`);
-    } catch {
+      const refreshed = await getEntitlement(companyId, accessToken);
+      if (refreshed.plan === 'FULL' && refreshed.status === 'ACTIVE') {
+        router.push(`/full?company_id=${companyId}`);
+        return;
+      }
+      setError('Não foi possível ativar o FULL em modo teste. Tente novamente.');
+    } catch (err: any) {
+      setError(err?.message || 'Erro ao ativar FULL. Tente novamente.');
+    } finally {
       setLoading(false);
-      alert('Erro ao ativar FULL. Tente novamente.');
     }
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleActivateAndGo}
-      disabled={loading}
-      style={baseStyle as React.CSSProperties}
-    >
-      {loading ? 'Ativando...' : labelAuthorized}
-    </button>
+    <div>
+      <button
+        type="button"
+        onClick={handleActivateAndGo}
+        disabled={loading}
+        style={baseStyle as React.CSSProperties}
+      >
+        {loading ? 'Ativando...' : labelAuthorized}
+      </button>
+      {error && (
+        <p style={{ marginTop: '0.5rem', color: '#dc3545', fontSize: '0.9rem' }} role="alert">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

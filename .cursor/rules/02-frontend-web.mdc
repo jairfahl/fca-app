@@ -1,0 +1,24 @@
+---
+description: Padrões de frontend — UX, linguagem, api client central
+globs: apps/web/**/*
+alwaysApply: false
+---
+
+# Padrões de frontend (apps/web/AGENTS.md)
+
+## UX obrigatória
+- Nunca ficar mudo: toda ação gera feedback (toast/banner/inline).
+- Erro real: mensagem objetiva "Não foi possível carregar. Tente novamente."
+
+## Linguagem do produto
+- Proibido: DoD, assessment, submitted, LOW/MEDIUM/HIGH, segmento S.
+- Usar `uiCopy.ts`: assessment→Diagnóstico, submitted→Diagnóstico finalizado, LOW/MEDIUM/HIGH→Frágil/Organizado/Forte.
+
+## Fluxo FULL
+- UI não bloqueia FULL por LIGHT (exceto se backend negar por entitlement).
+- Guiar por API: status/entitlement.
+
+## Implementação
+- Um único api client central (`api.ts`).
+- `data-testid` nos CTAs críticos.
+- Carregar estado (entitlement/status) primeiro; só então renderizar CTAs decisivos.

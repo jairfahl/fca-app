@@ -3,10 +3,11 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+import CauseBlock from '@/components/CauseBlock';
 import {
   humanizeAnswerValue,
   humanizeBand,
@@ -23,6 +24,9 @@ type Finding = {
   o_que_esta_acontecendo: string;
   custo_de_nao_agir: string;
   o_que_muda_em_30_dias: string;
+  gap_label?: string | null;
+  cause_primary?: string | null;
+  mechanism_label?: string | null;
   primeiro_passo?: { action_key: string; action_title?: string } | null;
   trace?: {
     process_keys?: string[];
@@ -42,6 +46,7 @@ type Finding = {
 type SixPackItem = {
   title: string;
   o_que_acontece: string;
+  causa_porque?: string | null;
   custo_nao_agir: string;
   muda_em_30_dias: string;
   primeiro_passo_action_id: string | null;
@@ -85,8 +90,10 @@ export default function FullResultadosPage() {
 function FullResultadosContent() {
   const { user, session } = useAuth();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const companyId = searchParams.get('company_id');
   const assessmentId = searchParams.get('assessment_id');
+  const causePendingFromUrl = searchParams.get('msg') === 'cause_pending';
 
   const [state, setState] = useState<'loading' | 'ready' | 'error' | 'missing'>('loading');
   const [error, setError] = useState('');
@@ -116,13 +123,30 @@ function FullResultadosContent() {
           setPlanStatus(null);
         }
         setState('ready');
+        if (causePendingFromUrl && companyId && assessmentId && session?.access_token) {
+          try {
+            const pendingRes = await apiFetch(
+              `/full/causes/pending?assessment_id=${assessmentId}&company_id=${companyId}`,
+              {},
+              session.access_token
+            );
+            const pending = pendingRes?.pending || [];
+            if (pending.length === 0 && typeof window !== 'undefined') {
+              const params = new URLSearchParams(window.location.search);
+              params.delete('msg');
+              router.replace(`/full/resultados?${params.toString()}`, { scroll: false });
+            }
+          } catch {
+            // manter cause_pending na URL
+          }
+        }
       } catch (err: any) {
         setError(err?.message || 'Falha ao carregar resultados FULL');
         setState('error');
       }
     };
     load();
-  }, [companyId, assessmentId, session?.access_token]);
+  }, [companyId, assessmentId, session?.access_token, causePendingFromUrl, router]);
 
   const findings = payload?.findings || [];
   const sixPack = payload?.six_pack;
@@ -166,6 +190,10 @@ function FullResultadosContent() {
             >
               {labels.followExecution}
             </Link>
+          ) : causePendingFromUrl ? (
+            <span style={{ padding: '0.5rem 1rem', borderRadius: '6px', background: '#e9ecef', color: '#6c757d', fontSize: '0.9rem' }}>
+              Conclua as perguntas de causa abaixo para continuar
+            </span>
           ) : (
             <Link
               href={companyId && assessmentId ? `/full/acoes?company_id=${companyId}&assessment_id=${assessmentId}` : '/full/acoes'}
@@ -178,6 +206,27 @@ function FullResultadosContent() {
       </div>
 
       {state === 'loading' && <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando resultados...</div>}
+      {causePendingFromUrl && state === 'ready' && (
+        <div style={{ padding: '1rem 1.25rem', marginBottom: '1.5rem', borderRadius: '8px', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107' }}>
+          {labels.causePendingMessage}
+        </div>
+      )}
+      {state === 'ready' && causePendingFromUrl && companyId && assessmentId && session?.access_token && (
+        <div style={{ marginBottom: '2rem' }}>
+          <CauseBlock
+            companyId={companyId}
+            assessmentId={assessmentId}
+            accessToken={session.access_token}
+            onPendingResolved={() => {
+              if (typeof window !== 'undefined') {
+                const params = new URLSearchParams(window.location.search);
+                params.delete('msg');
+                router.replace(`/full/resultados?${params.toString()}`, { scroll: false });
+              }
+            }}
+          />
+        </div>
+      )}
       {state === 'error' && (
         <div style={{ padding: '1rem', borderRadius: '8px', backgroundColor: '#f8d7da', color: '#721c24', marginBottom: '1rem' }}>
           {error}
@@ -216,6 +265,9 @@ function FullResultadosContent() {
             assessmentId={assessmentId}
             planExists={planStatus?.exists ?? false}
           />
+          {companyId && assessmentId && session?.access_token && !causePendingFromUrl && (
+            <CauseBlock companyId={companyId} assessmentId={assessmentId} accessToken={session.access_token} />
+          )}
         </>
       )}
 
@@ -245,6 +297,12 @@ function FullResultadosContent() {
               <strong>{labels.raioXWhatWeSaw}:</strong>{' '}
               {isSixPackItem(selected) ? selected.o_que_acontece : selected.o_que_esta_acontecendo}
             </p>
+            {(isSixPackItem(selected) ? (selected as SixPackItem).causa_porque : (selected as Finding).cause_label ?? (selected as Finding).mechanism_label) && (
+              <p style={{ marginTop: '0.25rem', fontSize: '0.9rem', color: '#555' }}>
+                <strong>{labels.raioXPorQueAcontecendo}:</strong>{' '}
+                {isSixPackItem(selected) ? (selected as SixPackItem).causa_porque : (selected as Finding).cause_label ?? (selected as Finding).mechanism_label}
+              </p>
+            )}
             <p style={{ marginTop: '0.25rem', fontSize: '0.9rem', color: '#6c757d' }}>
               <strong>{labels.raioXCusto}:</strong> {isSixPackItem(selected) ? selected.custo_nao_agir : selected.custo_de_nao_agir}
             </p>
@@ -358,10 +416,11 @@ function Section({
       <h2 style={{ marginBottom: '1rem' }}>{title}</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
         {cards.map((item, idx) => {
-          let tit = isSixPackItem(item)
-            ? humanizeBandInText(item.title)
+          const tit = isSixPackItem(item)
+            ? (item.title || humanizeBandInText((item as SixPackItem).title))
             : `${PROCESS_LABELS[(item as Finding).processo] || (item as Finding).processo} (${humanizeBand((item as Finding).maturity_band)})`;
           const oQue = isSixPackItem(item) ? item.o_que_acontece : (item as Finding).o_que_esta_acontecendo;
+          const causa = isSixPackItem(item) ? (item as SixPackItem).causa_porque : (item as Finding).cause_label ?? (item as Finding).mechanism_label;
           const custo = isSixPackItem(item) ? item.custo_nao_agir : (item as Finding).custo_de_nao_agir;
           const muda = isSixPackItem(item) ? item.muda_em_30_dias : (item as Finding).o_que_muda_em_30_dias;
           const primeiroPasso = getPrimeiroPasso(item);
@@ -382,6 +441,9 @@ function Section({
             >
               <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{tit}</div>
               <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {oQue || '—'}</div>
+              {causa && (
+                <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXPorQueAcontecendo}:</strong> {causa}</div>
+              )}
               <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXCusto}:</strong> {custo || '—'}</div>
               <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioX30Dias}:</strong> {muda || '—'}</div>
               <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXPrimeiroPasso}:</strong> {primeiroPasso}</div>

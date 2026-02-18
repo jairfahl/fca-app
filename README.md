@@ -12,9 +12,14 @@ Monorepo com API (Node/Express) e Web (Next.js).
   /db
     /migrations
     /seed
-  package.json  (root com workspaces)
+  /docs        (contratos de API, arquitetura)
+  /catalogs    (catálogo FULL canônico)
+  AGENTS.md    (instruções para agentes — raiz)
+  package.json (root com workspaces)
   .env.example
 ```
+
+Para orientação detalhada de arquitetura e regras por contexto, ver [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) e os arquivos `AGENTS.md` em cada pasta.
 
 ## Instalação
 
@@ -131,6 +136,13 @@ As migrações estão localizadas em `db/migrations/`:
 - `017_full_findings.sql`: Findings persistidos (3 vazamentos + 3 alavancas)
 - `018_full_catalog_segment_and_microvalue.sql`: segment_applicability e typical_impact_text
 - `019_full_process_quick_win.sql`: quick_win em full_process_catalog
+- `020_full_cycle_history.sql`: histórico de ciclos FULL
+- `021_full_fallback_honest_titles.sql`: títulos honestos para fallbacks
+- `022_help_requests.sql`: tabela de solicitações de ajuda
+- `023_full_cause_engine.sql`: motor de causa (taxonomia, mecanismos)
+- `024_full_root_cause_schema.sql`: full_gap_instances, full_cause_answers, full_gap_causes
+- `025_full_gap_instances_status.sql`: status CAUSE_PENDING / CAUSE_CLASSIFIED em full_gap_instances
+- `026_full_value_events.sql`: eventos de valor
 
 ## Scripts disponíveis
 
@@ -139,6 +151,7 @@ As migrações estão localizadas em `db/migrations/`:
 - `npm run db:migrate`: Aplica migrações pendentes do banco de dados
 - `npm run db:seed`: Popula recommendations_catalog e catálogo FULL (processos, perguntas, recomendações, ações)
 - `npm run db:seed:full`: Popula apenas o catálogo FULL a partir de `catalogs/full/*.json`
+- `npm run e2e:full`: E2E fluxo FULL com causa (requer API rodando, TEST_EMAIL/TEST_PASSWORD no .env)
 
 ## Workspaces
 
@@ -168,7 +181,7 @@ As migrações estão localizadas em `db/migrations/`:
 - `/full/wizard?company_id=&assessment_id=`: Wizard do diagnóstico FULL (4 processos, 12 perguntas cada)
 - `/full/diagnostico?company_id=&assessment_id=`: Navegação por processo do diagnóstico FULL
 - `/full/resultados?company_id=&assessment_id=`: Resultados FULL — Raio-X do dono (3 vazamentos + 3 alavancas), CTA por status do plano
-- `/full/acoes?company_id=&assessment_id=`: Seleção de 3 ações (assinar plano mínimo). Suporta `?action_key=` (foco) e `?conteudo_definicao=1` (aviso)
+- `/full/acoes?company_id=&assessment_id=`: Seleção de 3 ações (assinar plano mínimo). Suporta `?action_key=` (foco) e `?conteudo_definicao=1` (aviso). Ações do mecanismo obrigatórias (quando há causa classificada) exibem badge "Obrigatório"
 - `/full/dashboard?company_id=&assessment_id=`: Dashboard de execução (3 ações). Suporta `?action_key=` (scroll)
 
 ## Endpoints Backend (Express)
@@ -210,14 +223,25 @@ As migrações estão localizadas em `db/migrations/`:
 - `GET /full/catalog?segment=C|I|S&company_id=`: Catálogo de processos e perguntas (microvalor, typical_impact_text)
 - `GET /full/plan/status?assessment_id=&company_id=`: Status do plano mínimo (`exists`, `progress`, `next_action_title`)
 - `GET /full/results?assessment_id=&company_id=`: Resultados FULL (findings, six_pack: vazamentos + alavancas)
-- `GET /full/actions?assessment_id=&company_id=`: Sugestões de ações para o plano (3 por findings)
-- `POST /full/plan?company_id=`: Cria/atualiza plano mínimo (3 ações). Body: `{ assessment_id, actions: [...] }`
+- `GET /full/actions?assessment_id=&company_id=`: Sugestões de ações para o plano (3 por findings). Retorna `mechanism_required_action_keys` quando há causas classificadas (ações obrigatórias do mecanismo).
+- `POST /full/plan?company_id=`: Cria/atualiza plano mínimo (3 ações). Body: `{ assessment_id, actions: [...] }`. Exige pelo menos 1 ação do mecanismo quando há causas classificadas (400 `MECHANISM_ACTION_REQUIRED` com `mechanism_action_keys`).
 - `GET /full/assessments/:id/plan?company_id=`: Lista plano (3 ações selecionadas)
 - `GET /full/assessments/:id/dashboard?company_id=`: Dashboard consolidado (scores, actions, evidence)
 
 ### Gate C - Visão Gerencial Estruturada
 - `GET /full/assessments/:id/summary?company_id=<uuid>`: Resumo executivo do diagnóstico FULL (scores, critical gaps, top initiatives, dependencies, highlights)
 - `GET /full/assessments/:id/next-best-actions?company_id=<uuid>`: Próximas melhores ações (ready_now vs blocked_by baseado em dependências)
+
+### Códigos de erro comuns (API)
+
+| Código | HTTP | Descrição |
+|--------|------|-----------|
+| `DIAG_INCOMPLETE` | 400 | Faltam respostas. Payload: `missing`, `missing_process_keys`, `answered_count`, `total_expected` |
+| `CATALOG_INVALID` | 500 | Catálogo inconsistente (ex.: processo sem perguntas) |
+| `FINDINGS_FAILED` | 500 | Falha ao gerar findings. Payload: `debug_id` |
+| `MECHANISM_ACTION_REQUIRED` | 400 | Plano sem ação do mecanismo. Payload: `mechanism_action_keys` |
+| `DIAG_NOT_DRAFT` | 400 | Assessment já enviado; respostas não aceitas |
+| `DIAG_ALREADY_SUBMITTED` | 400 | Diagnóstico já concluído |
 
 ## Evidências F1 — copiar/colar
 
@@ -329,6 +353,8 @@ Todas as tabelas possuem RLS habilitado:
 
 ## Documentação Adicional
 
+- `AGENTS.md`: Instruções-mãe para agentes (backend fonte de verdade, linguagem PME)
+- `docs/ARCHITECTURE.md`: Arquitetura consolidada e referência aos AGENTS por contexto
 - `AUTH_FAIL_CLOSED_FIX.md`: Documentação da correção crítica de segurança
 - `F3_AUDIT_EVIDENCE.md`: Evidências de auditoria para F3 (recomendações e ações gratuitas)
 - `F3_CURL_EXAMPLES.md`: Exemplos de cURL para testar endpoints F3

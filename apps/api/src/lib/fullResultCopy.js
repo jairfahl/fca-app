@@ -193,13 +193,28 @@ function getComoPuxouNivel(processAnswers, questionCatalog) {
 
 const FALLBACK_ACTION_TITLE = 'Ação em definição pelo método';
 
+/** Fallback determinístico quando gap não coberto (fora do MVP). Sem inventar causa. */
+const FALLBACK_CONTENT_NAO_DEFINIDO = 'Conteúdo em definição pelo método';
+
+/**
+ * Faixa canônica de custo (não número preciso). Usado em recomendações/sugestões.
+ */
+function getCustoDeNaoAgirFaixa(band, processMeta) {
+  const base = processMeta?.typical_impact_text;
+  if (base) return base;
+  const bandQual = { LOW: 'baixo', MEDIUM: 'médio', HIGH: 'alto' }[band] || 'médio';
+  return `Custo ${bandQual}: perda de dinheiro, atraso ou retrabalho.`;
+}
+
 module.exports = {
   getOQueEstaAcontecendo,
   getCustoDeNaoAgir,
+  getCustoDeNaoAgirFaixa,
   getOQueMudaEm30Dias,
   humanizeAnswerValue,
   getComoPuxouNivel,
   FALLBACK_ACTION_TITLE,
+  FALLBACK_CONTENT_NAO_DEFINIDO,
   PROCESS_LABEL,
   PROTECTS_LABEL,
 };

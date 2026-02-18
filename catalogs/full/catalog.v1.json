@@ -1,0 +1,249 @@
+{
+  "version": "v1",
+  "processes": [
+    {
+      "process_key": "COMERCIAL",
+      "items": [
+        {
+          "id": "COMERCIAL-CRITICO-1",
+          "nivel_ui": "CRITICO",
+          "band_backend": "LOW",
+          "signals": ["COMERCIAL_Q01", "COMERCIAL_Q02", "COMERCIAL_Q03"],
+          "recommendation": {
+            "title": "Estruturar prospecção e pipeline comercial",
+            "what_is_happening": "O funil comercial está solto: sem ICP definido, sem processo de prospecção e sem dono para conversão.",
+            "cost_of_not_acting": "Perda de 10-30% das oportunidades por falta de follow-up e qualificação.",
+            "change_in_30_days": "Você terá ICP documentado, rotina de prospecção e alguém responsável por converter."
+          },
+          "action": {
+            "action_key": "COMERCIAL_ACAO_PADRONIZAR_FUNIL",
+            "title": "Padronizar funil comercial",
+            "steps_3": [
+              "Definir ICP e documentar em uma página",
+              "Criar rotina semanal de prospecção (dias/horários fixos)",
+              "Atribuir dono para pipeline e conversão"
+            ],
+            "owner_suggested": "Responsável comercial ou dono",
+            "metric_suggested": "Leads qualificados/semana e taxa de conversão",
+            "done_when": [
+              "ICP documentado e aprovado",
+              "Rotina de prospecção em calendário",
+              "Dono definido e comunicado ao time"
+            ]
+          }
+        },
+        {
+          "id": "COMERCIAL-EM_AJUSTE-1",
+          "nivel_ui": "EM_AJUSTE",
+          "band_backend": "MEDIUM",
+          "signals": ["COMERCIAL_Q04", "COMERCIAL_Q05", "COMERCIAL_Q06", "COMERCIAL_Q07"],
+          "recommendation": {
+            "title": "Melhorar acompanhamento e histórico de clientes",
+            "what_is_happening": "Indicadores existem mas não são acompanhados com frequência; histórico de clientes está disperso.",
+            "cost_of_not_acting": "Retrabalho e perda de oportunidades por falta de visibilidade do pipeline.",
+            "change_in_30_days": "Indicadores em rotina semanal e histórico centralizado para decisão."
+          },
+          "action": {
+            "action_key": "COMERCIAL_ACAO_CENTRALIZAR_HISTORICO",
+            "title": "Centralizar histórico e acompanhar indicadores",
+            "steps_3": [
+              "Definir onde registrar histórico (CRM ou planilha)",
+              "Criar rotina semanal de acompanhamento de indicadores",
+              "Treinar equipe no uso do registro"
+            ],
+            "owner_suggested": "Responsável comercial",
+            "metric_suggested": "Indicadores atualizados e taxa de follow-up",
+            "done_when": [
+              "Ferramenta definida e em uso",
+              "Rotina de acompanhamento agendada",
+              "Pelo menos 1 revisão realizada"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "process_key": "OPERACOES",
+      "items": [
+        {
+          "id": "OPERACOES-CRITICO-1",
+          "nivel_ui": "CRITICO",
+          "band_backend": "LOW",
+          "signals": ["OPERACOES_Q01", "OPERACOES_Q02", "OPERACOES_Q03"],
+          "recommendation": {
+            "title": "Mapear e documentar processos de entrega",
+            "what_is_happening": "Processos principais não estão mapeados; não há checklist nem responsável por etapa.",
+            "cost_of_not_acting": "Retrabalho, atrasos e gargalos não identificados.",
+            "change_in_30_days": "Fluxo mapeado, checklist documentado e donos por etapa."
+          },
+          "action": {
+            "action_key": "OPERACOES_ACAO_MAPEAR_ENTREGA",
+            "title": "Mapear processo de entrega",
+            "steps_3": [
+              "Desenhar fluxo atual no papel ou ferramenta",
+              "Identificar etapas críticas e gargalos",
+              "Atribuir responsável por cada etapa"
+            ],
+            "owner_suggested": "Responsável operacional",
+            "metric_suggested": "Tempo de ciclo por etapa",
+            "done_when": [
+              "Fluxo desenhado e validado",
+              "Gargalos identificados",
+              "Donos comunicados"
+            ]
+          }
+        },
+        {
+          "id": "OPERACOES-EM_AJUSTE-1",
+          "nivel_ui": "EM_AJUSTE",
+          "band_backend": "MEDIUM",
+          "signals": ["OPERACOES_Q04", "OPERACOES_Q05", "OPERACOES_Q06", "OPERACOES_Q07"],
+          "recommendation": {
+            "title": "Monitorar prazos e melhorar rotina de revisão",
+            "what_is_happening": "SLA e prazos existem mas não são monitorados; rotina de melhoria é esporádica.",
+            "cost_of_not_acting": "Atrasos recorrentes e problemas repetitivos.",
+            "change_in_30_days": "Acompanhamento de SLA em rotina e revisão quinzenal de processos."
+          },
+          "action": {
+            "action_key": "OPERACOES_ACAO_MONITORAR_SLA",
+            "title": "Monitorar SLA e revisar processos",
+            "steps_3": [
+              "Definir como medir prazos (planilha ou sistema)",
+              "Agendar revisão quinzenal de processos",
+              "Registrar melhorias identificadas"
+            ],
+            "owner_suggested": "Responsável operacional",
+            "metric_suggested": "Cumprimento de SLA e itens de melhoria",
+            "done_when": [
+              "Método de medição definido",
+              "Pelo menos 2 revisões realizadas",
+              "1 melhoria implementada"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "process_key": "ADM_FIN",
+      "items": [
+        {
+          "id": "ADM_FIN-CRITICO-1",
+          "nivel_ui": "CRITICO",
+          "band_backend": "LOW",
+          "signals": ["ADM_FIN_Q01", "ADM_FIN_Q02", "ADM_FIN_Q03"],
+          "recommendation": {
+            "title": "Organizar controle de caixa e conciliação",
+            "what_is_happening": "Controle de entradas e saídas é informal; conciliação bancária não é rotina.",
+            "cost_of_not_acting": "Risco de aperto de caixa e decisões no escuro.",
+            "change_in_30_days": "Controle de caixa em uso e conciliação semanal."
+          },
+          "action": {
+            "action_key": "ADM_FIN_ACAO_CONTROLE_CAIXA",
+            "title": "Implementar controle de caixa e conciliação",
+            "steps_3": [
+              "Definir planilha ou sistema para entradas/saídas",
+              "Estabelecer rotina semanal de conciliação",
+              "Designar responsável por fechamento"
+            ],
+            "owner_suggested": "Responsável financeiro ou dono",
+            "metric_suggested": "Desvio projetado vs realizado",
+            "done_when": [
+              "Controle em uso por 2 semanas",
+              "Conciliação realizada",
+              "Responsável definido"
+            ]
+          }
+        },
+        {
+          "id": "ADM_FIN-EM_AJUSTE-1",
+          "nivel_ui": "EM_AJUSTE",
+          "band_backend": "MEDIUM",
+          "signals": ["ADM_FIN_Q04", "ADM_FIN_Q05", "ADM_FIN_Q06", "ADM_FIN_Q07"],
+          "recommendation": {
+            "title": "Projetar fluxo de caixa e separar despesas",
+            "what_is_happening": "Fluxo de caixa não é projetado; despesas pessoais e empresariais misturadas.",
+            "cost_of_not_acting": "Surpresas de liquidez e dificuldade contábil.",
+            "change_in_30_days": "Projeção D+7 em uso e regra clara de separação."
+          },
+          "action": {
+            "action_key": "ADM_FIN_ACAO_FLUXO_CAIXA",
+            "title": "Projetar fluxo de caixa e separar despesas",
+            "steps_3": [
+              "Criar projeção D+7 de entradas e saídas",
+              "Definir regra para separar despesas pessoais/empresariais",
+              "Revisar projeção semanalmente"
+            ],
+            "owner_suggested": "Responsável financeiro",
+            "metric_suggested": "Desvio projetado vs realizado",
+            "done_when": [
+              "Projeção atualizada por 2 semanas",
+              "Regra de separação documentada",
+              "1 revisão realizada"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "process_key": "GESTAO",
+      "items": [
+        {
+          "id": "GESTAO-CRITICO-1",
+          "nivel_ui": "CRITICO",
+          "band_backend": "LOW",
+          "signals": ["GESTAO_Q01", "GESTAO_Q02", "GESTAO_Q03"],
+          "recommendation": {
+            "title": "Definir metas e acompanhamento",
+            "what_is_happening": "Metas não estão claras ou comunicadas; não há reunião de acompanhamento nem dono por área.",
+            "cost_of_not_acting": "Equipe sem direção e prioridades mudando toda semana.",
+            "change_in_30_days": "Metas comunicadas, reunião agendada e donos definidos."
+          },
+          "action": {
+            "action_key": "GESTAO_ACAO_METAS_ACOMPANHAMENTO",
+            "title": "Definir metas e ritual de acompanhamento",
+            "steps_3": [
+              "Definir 3-5 metas trimestrais e comunicar",
+              "Agendar reunião semanal fixa de acompanhamento",
+              "Atribuir dono por área ou projeto"
+            ],
+            "owner_suggested": "Dono ou gestor",
+            "metric_suggested": "Metas comunicadas e reuniões realizadas",
+            "done_when": [
+              "Metas documentadas e comunicadas",
+              "Reunião agendada e realizada",
+              "Donos definidos e comunicados"
+            ]
+          }
+        },
+        {
+          "id": "GESTAO-EM_AJUSTE-1",
+          "nivel_ui": "EM_AJUSTE",
+          "band_backend": "MEDIUM",
+          "signals": ["GESTAO_Q04", "GESTAO_Q05", "GESTAO_Q06", "GESTAO_Q07"],
+          "recommendation": {
+            "title": "Estruturar papéis e feedback",
+            "what_is_happening": "Indicadores de gestão existem mas não são acompanhados; papéis e feedback são informais.",
+            "cost_of_not_acting": "Execução perde ritmo e conflitos não resolvidos.",
+            "change_in_30_days": "Papéis documentados e rotina de feedback em andamento."
+          },
+          "action": {
+            "action_key": "GESTAO_ACAO_PAPEIS_FEEDBACK",
+            "title": "Documentar papéis e rotina de feedback",
+            "steps_3": [
+              "Listar papéis e responsabilidades por área",
+              "Agendar 1:1 com cada pessoa-chave",
+              "Documentar acordos e próximos passos"
+            ],
+            "owner_suggested": "Dono ou gestor",
+            "metric_suggested": "1:1 realizados e acordos documentados",
+            "done_when": [
+              "Papéis documentados",
+              "Pelo menos 2 1:1 realizados",
+              "Acordos registrados"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

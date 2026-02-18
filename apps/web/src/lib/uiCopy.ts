@@ -8,13 +8,20 @@
 
 // --- Labels de interface ---
 export const labels = {
-  dod: 'Critérios de conclusão',
+  dod: 'O que conta como feito',
   confirmDod: 'Confirmar o que conta como feito',
+  checklistConfirmed: 'Confirmado',
   checklistIncomplete: 'Falta confirmar o que conta como feito',
   doneRequiresChecklist: 'Para concluir, confirme o que conta como feito',
   assessment: 'Diagnóstico',
   planMinimal: 'Plano mínimo (3 movimentos em 30 dias)',
   planMinimalCta: 'Assinar plano mínimo (3 movimentos em 30 dias)',
+  chooseUpTo3Movements: 'Escolha até 3 movimentos para os próximos 30 dias.',
+  fewerActionsExplain: 'Por enquanto, só temos recomendações com encaixe claro para estes pontos do seu diagnóstico.',
+  diagNotReadyMessage: 'Conclua o diagnóstico para liberar as ações.',
+  noRecommendationsMessage: 'Ainda não temos recomendações com encaixe claro para seu diagnóstico.',
+  verResultados: 'Ver resultados do diagnóstico',
+  falarComConsultor: 'Falar com consultor',
   verAcaoSugerida: 'Ver ação sugerida',
   verProximoPasso: 'Ver próximo passo',
   conteudoEmDefinicao: 'Conteúdo em definição pelo método.',
@@ -42,8 +49,12 @@ export const labels = {
   raioXWhyTitle: 'Por que isso apareceu',
   raioXWhatWeSaw: 'O que vimos',
   raioXWhatCauses: 'O que costuma causar isso',
+  raioXPorQueAcontecendo: 'Por que está acontecendo',
   raioXSignals: 'Sinais nas suas respostas',
   raioXComoPuxou: 'Como isso puxou o nível',
+  causePendingMessage: 'Responda às perguntas de causa abaixo antes de escolher suas ações. Assim indicamos as recomendações mais adequadas.',
+  causeBlockTitle: 'Entender a causa (para recomendar certo)',
+  causeBlockIntro: 'Responda para cada tema abaixo. Com isso, indicamos a causa provável e o que muda em 30 dias.',
 } as const;
 
 /** Monta o texto de progresso: "Progresso do plano (3 ações): X/3" */
@@ -68,17 +79,36 @@ export function humanizeStatus(status: string | null | undefined): string {
 }
 
 /**
- * Converte maturity_band (LOW/MEDIUM/HIGH) para texto legível.
+ * Converte maturity_band / band_backend (LOW/MEDIUM/HIGH) para nível de dono.
+ * FULL: CRÍTICO / EM AJUSTE / SOB CONTROLE
  */
 export function humanizeBand(band: string | null | undefined): string {
   if (!band) return '—';
   const map: Record<string, string> = {
-    LOW: 'Frágil',
-    MED: 'Organizado',
-    MEDIUM: 'Organizado',
-    HIGH: 'Forte',
+    LOW: 'CRÍTICO',
+    MED: 'EM AJUSTE',
+    MEDIUM: 'EM AJUSTE',
+    HIGH: 'SOB CONTROLE',
   };
-  return map[band.toUpperCase()] ?? band;
+  return map[String(band).toUpperCase()] ?? band;
+}
+
+/**
+ * Alias: mesmo mapeamento para nivel_ui (backend pode enviar CRITICO/EM_AJUSTE/SOB_CONTROLE).
+ */
+export function humanizeLevelBand(bandOrNivel: string | null | undefined): string {
+  if (!bandOrNivel) return '—';
+  const u = String(bandOrNivel).toUpperCase().replace(/-/g, '_');
+  const map: Record<string, string> = {
+    LOW: 'CRÍTICO',
+    MED: 'EM AJUSTE',
+    MEDIUM: 'EM AJUSTE',
+    HIGH: 'SOB CONTROLE',
+    CRITICO: 'CRÍTICO',
+    EM_AJUSTE: 'EM AJUSTE',
+    SOB_CONTROLE: 'SOB CONTROLE',
+  };
+  return map[u] ?? bandOrNivel;
 }
 
 /**
@@ -124,9 +154,9 @@ export function humanizeAnswerValue(value: number): string {
 
 export function humanizeBandInText(text: string): string {
   return text
-    .replace(/\bLOW\b/g, 'Frágil')
-    .replace(/\bMEDIUM\b|\bMED\b/g, 'Organizado')
-    .replace(/\bHIGH\b/g, 'Forte');
+    .replace(/\bLOW\b/g, 'CRÍTICO')
+    .replace(/\bMEDIUM\b|\bMED\b/g, 'EM AJUSTE')
+    .replace(/\bHIGH\b/g, 'SOB CONTROLE');
 }
 
 /** Aliases para compatibilidade (FULL_COPY). */

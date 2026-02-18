@@ -1,0 +1,20 @@
+---
+description: Regras inegociáveis do projeto — backend fonte de verdade, sem refatoração estética
+alwaysApply: true
+---
+
+# Regras inegociáveis (AGENTS.md)
+
+1. **Fonte de verdade**: BANCO + backend. Frontend apenas consulta e renderiza; nunca decide elegibilidade nem altera estado sem API.
+
+2. **Nunca consertar só a UI**: Se houver inconsistência (ex.: DIAG_NOT_READY), corrigir primeiro no backend/contrato; depois ajustar UI.
+
+3. **Não refatorar por estética**: Mudanças mínimas, determinísticas, com contrato claro e teste.
+
+4. **Linguagem do produto**: dono de PME. Proibido jargão na UI (DoD, assessment, submitted, LOW/MEDIUM/HIGH). Usar traduções em `uiCopy.ts`.
+
+5. **Definition of Done**: Contrato em /docs, teste mínimo (happy path + erro + idempotência), logs essenciais sem vazamento.
+
+6. **Arquitetura**: Backend Express em /light/* e /full/*; Frontend Next.js consome API; Supabase/Postgres é persistência.
+
+7. **Ambiguidade**: Comportamento determinístico e idempotente. Fallback honesto se catálogo não cobrir; registrar gap.

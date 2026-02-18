@@ -428,7 +428,7 @@ function RecommendationsContent() {
     letterSpacing: '0.02em'
   };
 
-  const hasFullAccess = assertFullAccess(entitlement);
+  const hasFullAccess = assertFullAccess(entitlement, user?.email);
   const isLight = !hasFullAccess;
   const processOrder = PROCESS_ORDER;
   const safeLightSelections = lightSelections || {};
@@ -977,6 +977,7 @@ function RecommendationsContent() {
             companyId={companyId}
             entitlement={entitlement}
             accessToken={session?.access_token ?? null}
+            userEmail={user?.email}
             variant="secondary"
           />
         </div>
@@ -1005,6 +1006,7 @@ function RecommendationsContent() {
           companyId={companyId || ''}
           entitlement={entitlement}
           accessToken={session?.access_token ?? null}
+          userEmail={user?.email}
           variant="secondary"
         />
       </footer>

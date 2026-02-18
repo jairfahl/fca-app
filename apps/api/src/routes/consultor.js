@@ -12,7 +12,7 @@ router.use(requireAuth);
 router.use(requireConsultorOrAdmin);
 
 // GET /consultor/companies — lista empresas (id, name)
-router.get('/consultor/companies', async (req, res) => {
+router.get('/companies', async (req, res) => {
   try {
     const { data, error } = await supabase
       .schema('public')
@@ -32,7 +32,7 @@ router.get('/consultor/companies', async (req, res) => {
 });
 
 // GET /consultor/company/:company_id/overview — visão consolidada (somente leitura)
-router.get('/consultor/company/:company_id/overview', async (req, res) => {
+router.get('/company/:company_id/overview', async (req, res) => {
   try {
     const companyId = req.params.company_id;
 
@@ -96,7 +96,7 @@ router.get('/consultor/company/:company_id/overview', async (req, res) => {
 });
 
 // GET /consultor/company/:company_id/actions — ações do ciclo + evidências
-router.get('/consultor/company/:company_id/actions', async (req, res) => {
+router.get('/company/:company_id/actions', async (req, res) => {
   try {
     const companyId = req.params.company_id;
 
@@ -147,7 +147,7 @@ router.get('/consultor/company/:company_id/actions', async (req, res) => {
 });
 
 // GET /consultor/help-requests?status=OPEN — lista pedidos de ajuda (CONSULTOR/ADMIN)
-router.get('/consultor/help-requests', async (req, res) => {
+router.get('/help-requests', async (req, res) => {
   try {
     const status = req.query.status || 'OPEN';
     const { data, error } = await supabase
@@ -169,7 +169,7 @@ router.get('/consultor/help-requests', async (req, res) => {
 });
 
 // POST /consultor/help-requests/:id/close — fecha pedido (CONSULTOR/ADMIN)
-router.post('/consultor/help-requests/:id/close', async (req, res) => {
+router.post('/help-requests/:id/close', async (req, res) => {
   try {
     const id = req.params.id;
     const { data: existing, error: fetchErr } = await supabase

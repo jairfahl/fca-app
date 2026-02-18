@@ -52,7 +52,7 @@ function FullDiagnosticContent() {
         setError('');
 
         const entitlement = await getEntitlement(companyId, session.access_token);
-        if (!assertFullAccess(entitlement)) {
+        if (!assertFullAccess(entitlement, user?.email)) {
           setState('blocked');
           auditLog('full_diagnostic_blocked', {
             company_id: companyId,

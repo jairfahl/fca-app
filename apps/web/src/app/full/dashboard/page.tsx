@@ -19,6 +19,21 @@ interface ConsultantNote {
   created_at: string;
 }
 
+type WhyItem = { question_key: string; answer: number | string; label?: string };
+
+const LIKERT_LABELS: Record<string, string> = {
+  DISCORDO_PLENAMENTE: 'Discordo plenamente',
+  DISCORDO: 'Discordo',
+  NEUTRO: 'Neutro',
+  CONCORDO: 'Concordo',
+  CONCORDO_PLENAMENTE: 'Concordo plenamente',
+};
+
+function formatWhyAnswer(a: number | string): string {
+  if (typeof a === 'number') return `${a}/10`;
+  return LIKERT_LABELS[String(a)] || String(a);
+}
+
 interface DashboardAction {
   position: number;
   process_key: string;
@@ -36,6 +51,8 @@ interface DashboardAction {
   declared_gain: string | null;
   dropped_reason: string | null;
   consultant_notes?: ConsultantNote[];
+  cause_label?: string | null;
+  why?: WhyItem[] | null;
 }
 
 interface DashboardData {
@@ -90,6 +107,7 @@ function FullDashboardContent() {
 
   const focusActionKey = searchParams.get('action_key');
   const msgNoActionsLeft = searchParams.get('msg') === 'no_actions_left';
+  const msgDiagAlreadySubmitted = searchParams.get('msg') === 'diag_already_submitted';
 
   useEffect(() => {
     if (!loading && data?.actions && focusActionKey && actionRefs.current[focusActionKey]) {
@@ -345,6 +363,11 @@ function FullDashboardContent() {
         </div>
       </div>
 
+      {msgDiagAlreadySubmitted && (
+        <div style={{ padding: '1rem', backgroundColor: '#d4edda', color: '#155724', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid #c3e6cb' }}>
+          Diagnóstico já foi enviado. Acesse suas ações abaixo.
+        </div>
+      )}
       {msgNoActionsLeft && (
         <div style={{ padding: '1rem', backgroundColor: '#fff3cd', color: '#856404', borderRadius: '8px', marginBottom: '1.5rem', border: '1px solid #ffc107' }}>
           Não há mais ações sugeridas. Todas foram concluídas ou descartadas.
@@ -413,7 +436,7 @@ function FullDashboardContent() {
                   {data.actions
                     ?.filter((a) => a.declared_gain)
                     .map((a) => (
-                      <li key={a.action_key} style={{ marginBottom: '0.25rem' }}>
+                      <li key={a.action_key} style={{ marginBottom: '0.35rem', padding: '0.25rem 0.5rem', backgroundColor: '#d4edda', borderRadius: '4px', color: '#155724' }}>
                         {displayActionTitle(a.title)}: {a.declared_gain}
                       </li>
                     ))}
@@ -592,6 +615,24 @@ function ActionCard({
         <div><strong>Checkpoint:</strong> {action.checkpoint_date}</div>
       </div>
 
+      {(action.cause_label || (action.why && action.why.length > 0)) && (
+        <div style={{ marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#f8f9fa', borderRadius: '6px', fontSize: '0.9rem' }}>
+          {action.cause_label && (
+            <div style={{ marginBottom: '0.5rem' }}><strong>Causa provável:</strong> {action.cause_label}</div>
+          )}
+          {action.why && action.why.length > 0 && (
+            <div>
+              <strong>Respostas que sustentam:</strong>
+              <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0 }}>
+                {action.why.map((w, i) => (
+                  <li key={i}>{w.label || w.question_key}: {formatWhyAnswer(w.answer)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ marginBottom: '1rem' }}>
         <strong style={{ fontSize: '0.85rem' }}>{labels.dod}:</strong>
         <ul style={{ margin: '0.25rem 0 0 1.25rem', padding: 0, fontSize: '0.9rem' }}>
@@ -610,7 +651,11 @@ function ActionCard({
           <strong>Evidência:</strong>
           {action.before_baseline && <div>Antes: {action.before_baseline}</div>}
           {action.after_result && <div>Depois: {action.after_result}</div>}
-          {action.declared_gain && <div style={{ marginTop: '0.5rem', fontWeight: '600', color: '#198754' }}>Ganho declarado: {action.declared_gain}</div>}
+          {action.declared_gain && (
+            <div style={{ marginTop: '0.5rem', padding: '0.35rem 0.5rem', backgroundColor: '#d4edda', borderRadius: '4px', fontWeight: '600', color: '#155724' }}>
+              Ganho: {action.declared_gain}
+            </div>
+          )}
         </div>
       )}
 
@@ -719,10 +764,19 @@ function ActionModal({
   }
 
   if (type === 'evidence') {
+    const isMechanism = !!action.cause_label;
+    const metricHint = action.metric_text || 'métrica';
+    const beforePlaceholder = isMechanism ? `Ex: 0 ${metricHint}` : 'Ex: situação antes da ação';
+    const afterPlaceholder = isMechanism ? `Ex: 15 ${metricHint}` : 'Ex: situação após a ação';
     return (
       <div style={overlayStyle} onClick={onClose}>
         <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
           <h3 style={{ margin: '0 0 1rem 0' }}>Registrar evidência — {displayActionTitle(action.title)}</h3>
+          {isMechanism && (
+            <p style={{ marginBottom: '1rem', fontSize: '0.9rem', color: '#6c757d' }}>
+              Ação de mecanismo: use texto curto e métrica simples ({metricHint}).
+            </p>
+          )}
           <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', marginBottom: '0.25rem', fontWeight: '600' }}>Descrição</label>
             <textarea
@@ -738,6 +792,7 @@ function ActionModal({
               type="text"
               value={evidenceForm.before_baseline}
               onChange={(e) => setEvidenceForm({ ...evidenceForm, before_baseline: e.target.value })}
+              placeholder={beforePlaceholder}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #ced4da' }}
             />
           </div>
@@ -747,6 +802,7 @@ function ActionModal({
               type="text"
               value={evidenceForm.after_result}
               onChange={(e) => setEvidenceForm({ ...evidenceForm, after_result: e.target.value })}
+              placeholder={afterPlaceholder}
               style={{ width: '100%', padding: '0.5rem', borderRadius: '6px', border: '1px solid #ced4da' }}
             />
           </div>

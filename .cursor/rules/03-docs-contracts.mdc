@@ -1,0 +1,21 @@
+---
+description: Contratos FULL e regras de produto — catálogo fechado, microvalor, evidência
+globs: docs/**/*, catalogs/**/*
+alwaysApply: false
+---
+
+# Regras de produto FULL (docs/AGENTS.md)
+
+## Regras de sistema
+1. Cada pergunta paga custo: dinheiro, cliente, risco ou travamento.
+2. Resultado FULL: 3 Vazamentos + 3 Alavancas (o que acontece / custo / 30 dias / primeiro passo).
+3. Ações de catálogo fechado; fallback honesto + registrar gap se não houver.
+4. Plano mínimo: exatamente 3 ações por ciclo; evidência antes/depois (write-once).
+
+## Contratos mínimos (documentar em /docs)
+- /full/assessments/current
+- /full/answers (save/load)
+- /full/assessments/:id/submit
+- /full/results
+- /full/actions (sugestão determinística)
+- /full/cycle/close e /full/cycle/new

@@ -91,7 +91,7 @@ function FullContent() {
           return;
         }
         const ent = await getEntitlement(companyId, session.access_token);
-        if (!assertFullAccess(ent)) {
+        if (!assertFullAccess(ent, user?.email)) {
           setState('blocked');
           return;
         }

@@ -60,7 +60,7 @@ app.use('/', gateCRoutes);
 app.use('/', leadsRoutes);
 app.use('/', meRoutes);
 app.use('/', helpRequestsRoutes);
-app.use('/', consultorRoutes);
+app.use('/consultor', consultorRoutes);
 app.use('/', fullRoutes);
 console.log('ROUTES OK: f4 mounted');
 console.log('ROUTES OK: f4b mounted');

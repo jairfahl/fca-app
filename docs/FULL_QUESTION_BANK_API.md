@@ -93,19 +93,27 @@ Salva respostas (upsert idempotente). Apenas para assessment em DRAFT.
 
 ### POST /full/assessments/:id/submit?company_id=
 
-Valida completude (todas perguntas obrigatórias respondidas), calcula scores e muda status para SUBMITTED.
+Valida completude (todas perguntas obrigatórias respondidas), valida catálogo, calcula scores e muda status para SUBMITTED. Gera findings (3 vazamentos + 3 alavancas) com fallback determinístico quando catálogo incompleto.
 
-**Sucesso:** `{ "ok": true, "status": "SUBMITTED", "scores": [...] }`
+**Sucesso:** `{ "ok": true, "status": "SUBMITTED", "scores": [...], "findings_count": 6 }`
 
-**Erro (incompleto):**
+**Erro 400 DIAG_INCOMPLETE (incompleto):**
 ```json
 {
-  "error": "diagnóstico incompleto: faltam respostas obrigatórias",
-  "missing_questions": ["COMERCIAL:Q03", "OPERACOES:Q01"]
+  "code": "DIAG_INCOMPLETE",
+  "message_user": "Faltam respostas. Complete o processo X.",
+  "missing": [{ "process_key": "OPERACOES", "missing_question_keys": ["Q01", "Q02"] }],
+  "missing_process_keys": ["OPERACOES"],
+  "answered_count": 36,
+  "total_expected": 48
 }
 ```
 
-**Audit:** `[AUDIT] full_submit assessment_id=... status=SUBMITTED` ou `full_submit FAIL incompleto`
+**Erro 500 CATALOG_INVALID:** Catálogo inconsistente (ex.: processo sem perguntas no catálogo).
+
+**Erro 500 FINDINGS_FAILED:** Falha ao gerar findings. Payload inclui `debug_id` para suporte.
+
+**Audit:** `[AUDIT] full_submit_incomplete { assessment_id, missing_process_keys, answered_count }` ou `[AUDIT] full_catalog_missing { company_id, assessment_id, process_key }`
 
 ---
 
@@ -154,14 +162,48 @@ Retorna status do plano mínimo (3 ações).
 
 ### GET /full/actions?assessment_id=&company_id=
 
-Retorna sugestões de ações para o plano (baseadas nos findings).
+Retorna sugestões de ações para o plano (baseadas nos findings e no motor de causa).
 
 **Resposta:**
 ```json
 {
+  "ok": true,
   "suggestions": [
-    { "process_key": "COMERCIAL", "band": "LOW", "action_key": "act-com-1-low", "title": "...", "benefit_text": "...", "metric_hint": "..." }
+    { "process_key": "COMERCIAL", "band": "LOW", "action_key": "act-com-1-low", "title": "...", "benefit_text": "...", "metric_hint": "...", "why": [...] }
+  ],
+  "assessment_id": "...",
+  "required_count": 3,
+  "remaining_count": 8,
+  "has_cause_coverage": true,
+  "mechanism_required_action_keys": ["ADM_FIN-ROTINA_CAIXA_SEMANAL", "ADM_FIN-DONO_CAIXA"]
+}
+```
+
+Quando há causas classificadas (`full_gap_causes`), `mechanism_required_action_keys` lista as ações obrigatórias do mecanismo. O frontend deve incluir pelo menos uma no plano.
+
+---
+
+### POST /full/plan?company_id=
+
+Cria/atualiza plano mínimo (3 ações). **Validação de mecanismo:** quando há causas classificadas (`full_gap_causes`), exige pelo menos 1 ação de `mechanism_required_action_keys`.
+
+**Body (sucesso):**
+```json
+{
+  "assessment_id": "...",
+  "company_id": "...",
+  "actions": [
+    { "action_key": "...", "owner_name": "...", "metric_text": "...", "checkpoint_date": "YYYY-MM-DD", "position": 1 }
   ]
+}
+```
+
+**Erro 400 MECHANISM_ACTION_REQUIRED:**
+```json
+{
+  "code": "MECHANISM_ACTION_REQUIRED",
+  "message_user": "Sem atacar a causa, você volta ao mesmo problema. Inclua pelo menos uma ação do mecanismo indicado.",
+  "mechanism_action_keys": ["ADM_FIN-ROTINA_CAIXA_SEMANAL", "ADM_FIN-DONO_CAIXA"]
 }
 ```
 

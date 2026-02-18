@@ -1,0 +1,229 @@
+{
+  "version": "1.0.0",
+  "cause_classes": [
+    {
+      "id": "CAUSE_GOVERNANCA",
+      "label_cliente": "Falta de decisão e cobrança",
+      "descricao_cliente": "As decisões não viram rotina e ninguém fecha o ciclo.",
+      "mecanismo_primario": "Definir dono + regra de cobrança + fechamento semanal"
+    },
+    {
+      "id": "CAUSE_RITUAL",
+      "label_cliente": "Falta de rotina",
+      "descricao_cliente": "Sem cadência, tudo vira urgência e o básico não acontece.",
+      "mecanismo_primario": "Instalar rotina semanal (pauta fixa + registro + follow-up)"
+    },
+    {
+      "id": "CAUSE_DADOS",
+      "label_cliente": "Falta de números confiáveis",
+      "descricao_cliente": "Sem números, a empresa decide no achismo.",
+      "mecanismo_primario": "Instrumentação mínima (registro + visão simples + atualização)"
+    },
+    {
+      "id": "CAUSE_RESPONSAVEL",
+      "label_cliente": "Falta de dono e responsabilidade",
+      "descricao_cliente": "Não existe um responsável claro pelo resultado e pelo acompanhamento.",
+      "mecanismo_primario": "Nomear responsável, meta e consequência"
+    },
+    {
+      "id": "CAUSE_CAPACIDADE",
+      "label_cliente": "Falta de capacidade ou ferramenta",
+      "descricao_cliente": "A operação não consegue sustentar o básico com o time/sistema atual.",
+      "mecanismo_primario": "Simplificar e padronizar o mínimo viável"
+    },
+    {
+      "id": "CAUSE_INCENTIVOS",
+      "label_cliente": "Incentivos desalinhados",
+      "descricao_cliente": "O que se recompensa empurra a empresa para o comportamento errado.",
+      "mecanismo_primario": "Ajustar regra de incentivo para reforçar o que importa"
+    }
+  ],
+  "gaps": [
+    {
+      "gap_id": "GAP_CAIXA_PREVISAO",
+      "processo": "ADM_FIN",
+      "titulo_cliente": "Caixa imprevisível",
+      "descricao_cliente": "Você não consegue prever o caixa com antecedência.",
+      "cause_questions": [
+        {
+          "q_id": "CAIXA_Q1",
+          "texto_cliente": "Existe uma rotina semanal para olhar o caixa dos próximos 30 dias?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "CAIXA_Q2",
+          "texto_cliente": "As entradas e saídas futuras são registradas (mesmo que em planilha)?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "CAIXA_Q3",
+          "texto_cliente": "Existe um responsável claro por atualizar e cobrar esse controle?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "CAIXA_Q4",
+          "texto_cliente": "Você confia nos números (banco/contas a receber/contas a pagar) sem ajustes manuais frequentes?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        }
+      ],
+      "rules": {
+        "mode": "SCORE_WEIGHTS",
+        "weights": [
+          {"cause_id": "CAUSE_RITUAL", "q_id": "CAIXA_Q1", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_DADOS", "q_id": "CAIXA_Q2", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_RESPONSAVEL", "q_id": "CAIXA_Q3", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_DADOS", "q_id": "CAIXA_Q4", "map": {"DISCORDO_PLENAMENTE": 2, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}}
+        ],
+        "tie_breaker": ["CAUSE_RITUAL", "CAUSE_RESPONSAVEL", "CAUSE_DADOS", "CAUSE_GOVERNANCA", "CAUSE_CAPACIDADE", "CAUSE_INCENTIVOS"]
+      },
+      "mechanism_actions": [
+        {
+          "action_key": "ADM_FIN-ROTINA_CAIXA_SEMANAL",
+          "titulo_cliente": "Criar rotina semanal do caixa (30 dias)",
+          "porque": "Sem rotina, o caixa vira surpresa.",
+          "primeiro_passo_30d": "Definir dia fixo e atualizar projeção toda semana."
+        },
+        {
+          "action_key": "ADM_FIN-DONO_CAIXA",
+          "titulo_cliente": "Definir responsável pelo caixa e cobrança",
+          "porque": "Sem dono, ninguém sustenta o básico.",
+          "primeiro_passo_30d": "Nomear dono e combinar regra de cobrança semanal."
+        },
+        {
+          "action_key": "ADM_FIN-REGISTRO_ENTRADAS_SAIDAS",
+          "titulo_cliente": "Registrar entradas e saídas futuras",
+          "porque": "Sem registro, não existe previsão.",
+          "primeiro_passo_30d": "Criar planilha simples ou relatório mínimo e atualizar semanalmente."
+        }
+      ]
+    },
+    {
+      "gap_id": "GAP_VENDAS_FUNIL",
+      "processo": "COMERCIAL",
+      "titulo_cliente": "Vendas sem previsibilidade",
+      "descricao_cliente": "Você não sabe o que vai vender nas próximas semanas.",
+      "cause_questions": [
+        {
+          "q_id": "VENDAS_Q1",
+          "texto_cliente": "Existe uma reunião semanal comercial com pauta fixa?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "VENDAS_Q2",
+          "texto_cliente": "Existe registro mínimo do funil (CRM ou planilha) atualizado?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "VENDAS_Q3",
+          "texto_cliente": "Existe um responsável claro pelo resultado comercial e pela cobrança?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "VENDAS_Q4",
+          "texto_cliente": "A regra de comissão/bonificação reforça o comportamento certo (prospecção, follow-up, conversão)?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        }
+      ],
+      "rules": {
+        "mode": "SCORE_WEIGHTS",
+        "weights": [
+          {"cause_id": "CAUSE_RITUAL", "q_id": "VENDAS_Q1", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_DADOS", "q_id": "VENDAS_Q2", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_RESPONSAVEL", "q_id": "VENDAS_Q3", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_INCENTIVOS", "q_id": "VENDAS_Q4", "map": {"DISCORDO_PLENAMENTE": 2, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}}
+        ],
+        "tie_breaker": ["CAUSE_RITUAL", "CAUSE_DADOS", "CAUSE_RESPONSAVEL", "CAUSE_INCENTIVOS", "CAUSE_GOVERNANCA", "CAUSE_CAPACIDADE"]
+      },
+      "mechanism_actions": [
+        {
+          "action_key": "COMERCIAL-ROTINA_SEMANAL",
+          "titulo_cliente": "Instalar rotina semanal comercial",
+          "porque": "Sem cadência, o time não fecha ciclo e perde oportunidade.",
+          "primeiro_passo_30d": "Definir dia fixo, pauta e lista de pendências."
+        },
+        {
+          "action_key": "COMERCIAL-FUNIL_MINIMO",
+          "titulo_cliente": "Criar funil mínimo (CRM ou planilha)",
+          "porque": "Sem funil, você não enxerga nem prioriza.",
+          "primeiro_passo_30d": "Definir etapas e atualizar toda semana."
+        },
+        {
+          "action_key": "COMERCIAL-FOLLOWUP_PADRAO",
+          "titulo_cliente": "Padronizar follow-up (prazo e responsabilidade)",
+          "porque": "O maior vazamento é oportunidade sem próximo passo.",
+          "primeiro_passo_30d": "Definir regra: toda oportunidade tem próximo passo e data."
+        }
+      ]
+    },
+    {
+      "gap_id": "GAP_ROTINA_GERENCIAL",
+      "processo": "GESTAO",
+      "titulo_cliente": "Sem rotina gerencial (empresa no improviso)",
+      "descricao_cliente": "A empresa corre atrás do urgente e não sustenta o básico.",
+      "cause_questions": [
+        {
+          "q_id": "ROTINA_Q1",
+          "texto_cliente": "Existe reunião semanal de gestão com pauta fixa (resultado, prioridades e pendências)?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "ROTINA_Q2",
+          "texto_cliente": "As decisões viram tarefas com responsável e prazo (e alguém cobra depois)?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "ROTINA_Q3",
+          "texto_cliente": "Você tem poucos números essenciais acompanhados toda semana (caixa, vendas, entrega)?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        },
+        {
+          "q_id": "ROTINA_Q4",
+          "texto_cliente": "Quando alguém não entrega, existe consequência ou ajuste imediato?",
+          "tipo": "LIKERT_5",
+          "opcoes": ["DISCORDO_PLENAMENTE", "DISCORDO", "NEUTRO", "CONCORDO", "CONCORDO_PLENAMENTE"]
+        }
+      ],
+      "rules": {
+        "mode": "SCORE_WEIGHTS",
+        "weights": [
+          {"cause_id": "CAUSE_RITUAL", "q_id": "ROTINA_Q1", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_GOVERNANCA", "q_id": "ROTINA_Q2", "map": {"DISCORDO_PLENAMENTE": 3, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_DADOS", "q_id": "ROTINA_Q3", "map": {"DISCORDO_PLENAMENTE": 2, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}},
+          {"cause_id": "CAUSE_RESPONSAVEL", "q_id": "ROTINA_Q4", "map": {"DISCORDO_PLENAMENTE": 2, "DISCORDO": 2, "NEUTRO": 1, "CONCORDO": 0, "CONCORDO_PLENAMENTE": 0}}
+        ],
+        "tie_breaker": ["CAUSE_RITUAL", "CAUSE_GOVERNANCA", "CAUSE_RESPONSAVEL", "CAUSE_DADOS", "CAUSE_CAPACIDADE", "CAUSE_INCENTIVOS"]
+      },
+      "mechanism_actions": [
+        {
+          "action_key": "GESTAO-REUNIAO_SEMANAL",
+          "titulo_cliente": "Criar reunião semanal de gestão (30–45 min)",
+          "porque": "Sem rotina, nada sustenta.",
+          "primeiro_passo_30d": "Definir pauta fixa e horário semanal."
+        },
+        {
+          "action_key": "GESTAO-FECHAMENTO_PENDENCIAS",
+          "titulo_cliente": "Fechar pendências (responsável + data + cobrança)",
+          "porque": "Decisão sem cobrança vira conversa.",
+          "primeiro_passo_30d": "Toda decisão vira tarefa com dono e prazo."
+        },
+        {
+          "action_key": "GESTAO-PAINEL_SEMANAL",
+          "titulo_cliente": "Acompanhar 3 números essenciais semanalmente",
+          "porque": "Sem números, a gestão vira opinião.",
+          "primeiro_passo_30d": "Definir 3 números e revisar na reunião semanal."
+        }
+      ]
+    }
+  ]
+}

@@ -74,7 +74,7 @@ function FullDiagnosticoContent() {
       setError('');
 
       const entitlement = await getEntitlement(companyId, session.access_token);
-      if (!assertFullAccess(entitlement)) {
+      if (!assertFullAccess(entitlement, user?.email)) {
         setState('blocked');
         auditLog('full_diagnostico_blocked', { company_id: companyId });
         return;
@@ -140,7 +140,25 @@ function FullDiagnosticoContent() {
       );
       router.push(`/full/resultados?company_id=${companyId}&assessment_id=${assessment.id}`);
     } catch (err: any) {
-      setError(err.message || 'Erro ao submeter');
+      const code = (err as any)?.code;
+      const missingProcessKeys = (err as any)?.missing_process_keys as string[] | undefined;
+      const debugId = (err as any)?.debug_id as string | undefined;
+
+      if (code === 'DIAG_INCOMPLETE') {
+        const processKey = missingProcessKeys?.[0] || nextIncomplete?.process_key;
+        if (processKey && companyId && assessment?.id) {
+          router.push(`/full/wizard?company_id=${companyId}&assessment_id=${assessment.id}&process_key=${processKey}&msg=diag_incomplete`);
+          return;
+        }
+      }
+
+      if (code === 'FINDINGS_FAILED') {
+        setError(debugId
+          ? `Falha ao concluir diagnóstico (ref: ${debugId}). Tente novamente ou contate o suporte.`
+          : 'Falha ao concluir diagnóstico. Tente novamente ou contate o suporte.');
+      } else {
+        setError(err.message || 'Erro ao submeter');
+      }
       setState('ready');
     }
   };

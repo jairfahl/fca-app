@@ -353,7 +353,7 @@ function DiagnosticoContent() {
   const totalQuestions = questions.length || 12;
   const missingCount = Math.max(0, totalQuestions - answeredCount);
   const progressPercent = totalQuestions > 0 ? Math.round((answeredCount / totalQuestions) * 100) : 0;
-  const hasFullAccess = assertFullAccess(entitlement);
+  const hasFullAccess = assertFullAccess(entitlement, user?.email);
 
   useEffect(() => {
     if (!companyId || state !== 'ready' || hasLoggedRenderState.current) {
@@ -383,6 +383,7 @@ function DiagnosticoContent() {
               companyId={companyId}
               entitlement={entitlement}
               accessToken={session?.access_token ?? null}
+              userEmail={user?.email}
               variant="secondary"
               labelAuthorized="Assinar FULL"
               labelPaywall="Assinar FULL"
@@ -474,6 +475,7 @@ function DiagnosticoContent() {
               companyId={companyId || ''}
               entitlement={entitlement}
               accessToken={session?.access_token ?? null}
+              userEmail={user?.email}
               variant="primary"
               labelAuthorized="Assinar FULL"
               labelPaywall="Assinar FULL"
