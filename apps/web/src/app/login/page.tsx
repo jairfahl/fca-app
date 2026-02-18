@@ -25,7 +25,23 @@ export default function LoginPage() {
       });
 
       if (authError) {
-        setError(authError.message);
+        const msg = authError.message || '';
+        const status = (authError as { status?: number }).status;
+        const code = (authError as { code?: string }).code;
+
+        const isAuth500 =
+          status === 500 ||
+          msg.includes('Database error querying schema') ||
+          msg.includes('unexpected_failure') ||
+          code === 'unexpected_failure';
+
+        if (isAuth500) {
+          setError(
+            'Falha interna do Supabase Auth (500). Isso não é senha. Rode: npm run auth:diagnose'
+          );
+        } else {
+          setError(msg);
+        }
         setLoading(false);
         return;
       }
@@ -40,7 +56,7 @@ export default function LoginPage() {
         const me = await fetchMe(token);
         const role = me.role || 'USER';
         if (role === 'CONSULTOR' || role === 'ADMIN') {
-          router.push('/consultor');
+          router.push('/full/consultor');
         } else {
           router.push('/onboarding');
         }

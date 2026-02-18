@@ -69,8 +69,29 @@ function dumpDbEnv() {
 }
 
 
+// Fail-fast: variáveis críticas em DEV
+function checkEnvConfig() {
+  const isDev = process.env.NODE_ENV !== 'production';
+  if (!isDev) return;
+
+  const missing = [];
+  if (!process.env.SUPABASE_URL?.trim()) missing.push('SUPABASE_URL');
+  if (!process.env.SUPABASE_ANON_KEY?.trim()) missing.push('SUPABASE_ANON_KEY');
+  if (missing.length > 0) {
+    console.error('[ENV] FAIL: Variáveis ausentes em DEV:', missing.join(', '));
+    console.error('[ENV] Configure o .env no root do monorepo.');
+    process.exit(1);
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    console.warn('[ENV] WARNING: SUPABASE_SERVICE_ROLE_KEY ausente. Scripts auth:bootstrap e auth:diagnose dependem dela.');
+  }
+}
+
 // Inicializar conexão com banco e iniciar servidor
 async function startServer() {
+  checkEnvConfig();
+
   // Log determinístico de carregamento de env (sem expor segredo)
   const hasDbUrl = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim());
   if (!hasDbUrl) {

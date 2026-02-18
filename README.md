@@ -152,6 +152,8 @@ As migrações estão localizadas em `db/migrations/`:
 - `npm run db:seed`: Popula recommendations_catalog e catálogo FULL (processos, perguntas, recomendações, ações)
 - `npm run db:seed:full`: Popula apenas o catálogo FULL a partir de `catalogs/full/*.json`
 - `npm run e2e:full`: E2E fluxo FULL com causa (requer API rodando, TEST_EMAIL/TEST_PASSWORD no .env)
+- `npm run auth:diagnose`: Diagnóstico do Supabase Auth (health, usuários, teste de login). Identifica se 500 "Database error querying schema" é problema do Auth/schema.
+- `npm run auth:bootstrap`: Cria/atualiza usuários de teste (fca@fca.com, consultor@fca.com, admin@fca.com) com senha `senha123` e roles corretas.
 
 ## Workspaces
 
@@ -175,6 +177,13 @@ As migrações estão localizadas em `db/migrations/`:
 - `/free-action/[id]?company_id=<uuid>&assessment_id=<uuid>`: Registrar evidência (F3), com retorno preservando contexto
 - `/plano-30-dias?assessment_id=<uuid>&company_id=<uuid>`: Visualização consolidada dos 4 planos de 30 dias
 
+### Papéis (USER / CONSULTOR / ADMIN)
+- **USER**: vê apenas sua empresa e diagnósticos. Botão "Solicitar ajuda" (abre pedido auditável).
+- **CONSULTOR**: acesso transversal — `/full/consultor` (home), lista empresas, abre qualquer `company_id`, vê histórico FULL, ações, evidências, relatórios. Pode registrar notas por ação.
+- **ADMIN**: mesmo que CONSULTOR + pode ativar modo teste.
+
+Credenciais de teste: USER `fca@fca.com`, CONSULTOR `consultor@fca.com`, ADMIN `admin@fca.com` (senha: `senha123`). Role em `app_metadata.role` (JWT). Ver `scripts/set-user-roles.js` e `docs/roles.md`.
+
 ### Paywall e FULL
 - `/paywall?company_id=<uuid>`: Página de planos (placeholder)
 - `/full?company_id=<uuid>`: Diagnóstico completo (requer entitlement FULL)
@@ -183,6 +192,10 @@ As migrações estão localizadas em `db/migrations/`:
 - `/full/resultados?company_id=&assessment_id=`: Resultados FULL — Raio-X do dono (3 vazamentos + 3 alavancas), CTA por status do plano
 - `/full/acoes?company_id=&assessment_id=`: Seleção de 3 ações (assinar plano mínimo). Suporta `?action_key=` (foco) e `?conteudo_definicao=1` (aviso). Ações do mecanismo obrigatórias (quando há causa classificada) exibem badge "Obrigatório"
 - `/full/dashboard?company_id=&assessment_id=`: Dashboard de execução (3 ações). Suporta `?action_key=` (scroll)
+- `/full/relatorio?company_id=&full_version=`: Gerar/baixar relatório PDF
+- `/full/historico?company_id=`: Histórico de versões FULL
+- `/full/comparar?company_id=&from=&to=`: Comparação entre versões
+- `/full/consultor`: Área do consultor (CONSULTOR/ADMIN) — lista empresas, selecionar empresa, ver histórico/ações/relatórios
 
 ## Endpoints Backend (Express)
 

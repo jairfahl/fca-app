@@ -16,7 +16,10 @@
     "db:seed:cause-mvp": "node db/seed/seed-cause-taxonomy.js && node db/seed/seed-cause-mvp.js",
     "catalog:validate:full": "node db/validate/validate_full_catalog.js",
     "e2e:full": "node scripts/e2e-full-flow-with-cause.js",
-    "e2e:activate-full": "node scripts/e2e-activate-full.js"
+    "e2e:activate-full": "node scripts/e2e-activate-full.js",
+    "e2e:reports": "node scripts/e2e-reports-versions-roles.js",
+    "auth:diagnose": "node scripts/auth-diagnose.mjs",
+    "auth:bootstrap": "node scripts/auth-bootstrap.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
