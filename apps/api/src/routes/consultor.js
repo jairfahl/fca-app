@@ -234,6 +234,12 @@ router.get('/full/:assessment_id', async (req, res) => {
 // Guard requireConsultorOrAdmin garante que USER retorna 403.
 router.get('/companies', async (req, res) => {
   const ROUTE = 'GET /consultor/companies';
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    const role = req?.user?.role ?? '-';
+    console.log(`[CONSULTOR_ACCESS] ${ROUTE} status=${res.statusCode} ms=${ms} role=${role}`);
+  });
   try {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 200));
     const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
