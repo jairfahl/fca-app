@@ -56,7 +56,7 @@ export default function LoginPage() {
         const me = await fetchMe(token);
         const role = me.role || 'USER';
         if (role === 'CONSULTOR' || role === 'ADMIN') {
-          router.push('/full/consultor');
+          router.push('/consultor');
         } else {
           router.push('/onboarding');
         }

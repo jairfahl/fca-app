@@ -27,6 +27,25 @@ await supabase.auth.admin.updateUserById(userId, {
 - CONSULTOR: consultor@fca.com / senha123
 - ADMIN: admin@fca.com / senha123
 
+**Criar usuários de teste (recomendado):**
+```bash
+npm run auth:bootstrap
+```
+Cria/atualiza os três usuários via Auth API (senha `senha123`, roles em `app_metadata.role`).
+
+**Garantir roles corretos (consultor@fca.com = CONSULTOR, etc.):**
+```bash
+# Opção 1: via Auth API
+npm run auth:bootstrap
+
+# Opção 2: via SQL (idempotente)
+# Execute scripts/fix-auth-users-roles.sql no SQL Editor do Supabase
+```
+
+**Se o login retornar 500 "Database error querying schema":**
+1. Rode `npm run auth:diagnose` para confirmar se é problema do Auth/schema (não credencial).
+2. Execute `scripts/fix-auth-users-tokens.sql` no SQL Editor do Supabase (usuários criados via SQL podem ter colunas de token NULL).
+
 ## API
 
 ### GET /me

@@ -51,22 +51,44 @@ async function requireAuth(req, res, next) {
     const payload = verified.payload || {};
     const appMeta = payload.app_metadata || {};
     const userMeta = payload.user_metadata || {};
+    const email = payload.email ? String(payload.email) : null;
 
     if (!payload.sub) {
       console.warn('AUTH FAIL reason=missing sub');
       return json401(res, 'invalid token');
     }
 
-    const roleRaw = appMeta.role || userMeta.role;
-    const role = ['USER', 'CONSULTOR', 'ADMIN'].includes(roleRaw) ? roleRaw : 'USER';
+    let role = appMeta.role || userMeta.role;
+    let source = role ? (appMeta.role ? 'app_metadata' : 'user_metadata') : null;
+
+    if (!['USER', 'CONSULTOR', 'ADMIN'].includes(role)) {
+      role = 'USER';
+      source = source || 'fallback';
+    }
+
+    if (role === 'USER') {
+      try {
+        const { supabase } = require('../lib/supabase');
+        const { data: { user: adminUser } } = await supabase.auth.admin.getUserById(payload.sub);
+        const metaRole = adminUser?.app_metadata?.role || adminUser?.user_metadata?.role;
+        if (['CONSULTOR', 'ADMIN'].includes(metaRole)) {
+          role = metaRole;
+          source = 'admin_api';
+        }
+      } catch (_) { /* manter USER */ }
+    }
 
     req.user = {
       id: String(payload.sub),
-      email: payload.email ? String(payload.email) : null,
+      email,
       role,
     };
 
-    console.log(`AUTH OK sub=${req.user.id}`);
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(`AUTH OK email=${email} role=${role} source=${source || 'jwt'}`);
+    } else {
+      console.log(`AUTH OK sub=${req.user.id} role=${req.user.role}`);
+    }
     return next();
   } catch (err) {
     console.error(`AUTH FAIL reason=unexpected ${(err && err.message) ? err.message : err}`);
