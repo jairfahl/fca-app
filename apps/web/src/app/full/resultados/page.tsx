@@ -52,6 +52,7 @@ type SixPackItem = {
   primeiro_passo_action_id: string | null;
   primeiro_passo?: string | null;
   is_fallback?: boolean;
+  is_gap_content?: boolean;
   supporting: {
     processes: string[];
     como_puxou_nivel?: string | null;
@@ -88,7 +89,7 @@ export default function FullResultadosPage() {
 }
 
 function FullResultadosContent() {
-  const { user, session } = useAuth();
+  const { user, session, me } = useAuth();
   const searchParams = useSearchParams();
   const router = useRouter();
   const companyId = searchParams.get('company_id');
@@ -100,6 +101,7 @@ function FullResultadosContent() {
   const [payload, setPayload] = useState<ResultsPayload | null>(null);
   const [selected, setSelected] = useState<Finding | SixPackItem | null>(null);
   const [planStatus, setPlanStatus] = useState<{ exists: boolean; progress: string } | null>(null);
+  const userRole = me?.role ?? 'USER';
 
   useEffect(() => {
     const load = async () => {
@@ -247,7 +249,7 @@ function FullResultadosContent() {
         </div>
       )}
 
-      {state === 'ready' && (
+      {state === 'ready' && (vazamentos.length > 0 || alavancas.length > 0) && (
         <>
           <Section
             title="3 Vazamentos"
@@ -256,6 +258,7 @@ function FullResultadosContent() {
             companyId={companyId}
             assessmentId={assessmentId}
             planExists={planStatus?.exists ?? false}
+            userRole={userRole}
           />
           <Section
             title="3 Alavancas"
@@ -264,11 +267,36 @@ function FullResultadosContent() {
             companyId={companyId}
             assessmentId={assessmentId}
             planExists={planStatus?.exists ?? false}
+            userRole={userRole}
           />
           {companyId && assessmentId && session?.access_token && !causePendingFromUrl && (
             <CauseBlock companyId={companyId} assessmentId={assessmentId} accessToken={session.access_token} />
           )}
         </>
+      )}
+
+      {state === 'ready' && vazamentos.length === 0 && alavancas.length === 0 && (
+        <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f8f9fa', borderRadius: '8px', color: '#6c757d' }}>
+          <p style={{ marginBottom: '1rem' }}>Não foi possível carregar o diagnóstico completo.</p>
+          <p style={{ fontSize: '0.9rem' }}>Conclua o diagnóstico FULL e envie as respostas para ver os resultados.</p>
+          {companyId && (
+            <Link
+              href={`/full?company_id=${companyId}`}
+              style={{
+                display: 'inline-block',
+                marginTop: '1rem',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                backgroundColor: '#0d6efd',
+                color: '#fff',
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              Voltar ao diagnóstico FULL
+            </Link>
+          )}
+        </div>
       )}
 
       {selected && (
@@ -403,6 +431,7 @@ function Section({
   companyId,
   assessmentId,
   planExists,
+  userRole,
 }: {
   title: string;
   cards: CardItem[];
@@ -410,12 +439,23 @@ function Section({
   companyId: string | null;
   assessmentId: string | null;
   planExists: boolean;
+  userRole: 'USER' | 'CONSULTOR' | 'ADMIN';
 }) {
+  const isConsultor = userRole === 'CONSULTOR' || userRole === 'ADMIN';
+  const visibleCards = isConsultor
+    ? cards
+    : cards.filter((c) => {
+        const gap = isSixPackItem(c)
+          ? ((c as SixPackItem).is_gap_content ?? (c as SixPackItem).is_fallback)
+          : (c as Finding).is_fallback;
+        return !gap;
+      });
+
   return (
     <section style={{ marginBottom: '2rem' }}>
       <h2 style={{ marginBottom: '1rem' }}>{title}</h2>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
-        {cards.map((item, idx) => {
+        {visibleCards.map((item, idx) => {
           const tit = isSixPackItem(item)
             ? (item.title || humanizeBandInText((item as SixPackItem).title))
             : `${PROCESS_LABELS[(item as Finding).processo] || (item as Finding).processo} (${humanizeBand((item as Finding).maturity_band)})`;
@@ -426,6 +466,7 @@ function Section({
           const primeiroPasso = getPrimeiroPasso(item);
           const linkHref = getCardLinkHref(item, companyId, assessmentId, planExists);
           const linkLabel = getCardLinkLabel(item);
+          const isGap = isSixPackItem(item) ? (item as SixPackItem).is_gap_content : (item as Finding).is_fallback;
           return (
             <button
               key={isSixPackItem(item) ? `sp-${idx}` : (item as Finding).id}
@@ -439,7 +480,23 @@ function Section({
                 cursor: 'pointer',
               }}
             >
-              <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{tit}</div>
+              <div style={{ fontWeight: 600, marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                {tit}
+                {isConsultor && isGap && (
+                  <span
+                    style={{
+                      fontSize: '0.7rem',
+                      padding: '0.15rem 0.4rem',
+                      backgroundColor: '#fff3cd',
+                      color: '#856404',
+                      borderRadius: '4px',
+                      fontWeight: 'normal',
+                    }}
+                  >
+                    {labels.conteudoEmDefinicao}
+                  </span>
+                )}
+              </div>
               <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {oQue || '—'}</div>
               {causa && (
                 <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXPorQueAcontecendo}:</strong> {causa}</div>

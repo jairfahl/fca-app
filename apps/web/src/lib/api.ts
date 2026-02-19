@@ -7,6 +7,8 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   CHECKLIST_INCOMPLETE: 'Falta confirmar o que conta como feito.',
   CHECKLIST_INVALID: 'Falta confirmar o que conta como feito.',
   DIAG_NOT_READY: 'Conclua o diagnóstico para sugerir ações.',
+  DIAG_IN_PROGRESS: 'Conclua ou feche o ciclo atual antes de refazer o diagnóstico.',
+  SNAPSHOT_MISSING: 'Conclua o diagnóstico para gerar relatório.',
   DIAG_INCOMPLETE: 'Faltam respostas obrigatórias. Preencha todas as perguntas.',
   DIAG_NOT_FOUND: 'Diagnóstico não encontrado.',
   NO_ACTIONS_LEFT: 'Não há mais ações sugeridas. Acesse os resultados ou o dashboard.',
@@ -15,6 +17,7 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   EVIDENCE_REQUIRED: 'Para concluir, registre a evidência (antes e depois).',
   DROP_REASON_REQUIRED: 'Ao descartar uma ação, informe o motivo.',
   CYCLE_CLOSED: 'Ciclo fechado. Somente leitura.',
+  CONSULTOR_READ_ONLY: 'Consultor não preenche diagnóstico. Use o painel de consultor.',
 };
 
 export class ApiError extends Error {
@@ -97,6 +100,32 @@ export async function apiFetch(
   return await response.json();
 }
 
+/** Baixa PDF do relatório FULL (stream) e dispara download no navegador */
+export async function downloadFullReport(
+  companyId: string,
+  fullVersion: number,
+  accessToken: string
+): Promise<void> {
+  const url = `${API_BASE_URL}/full/reports/download?company_id=${encodeURIComponent(companyId)}&full_version=${fullVersion}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(
+      data.message_user || data.message || data.error || `Erro ${res.status}`,
+      res.status
+    );
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = `diagnostico-full-v${fullVersion}.pdf`;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 /** Resposta do GET /me */
 export interface MeResponse {
   user_id: string;
@@ -104,7 +133,23 @@ export interface MeResponse {
   role: 'USER' | 'CONSULTOR' | 'ADMIN';
 }
 
-/** Busca dados do usuário autenticado (incluindo role) */
+/** In-flight dedupe: evita múltiplos /me simultâneos para o mesmo token */
+let _inFlight: { token: string; promise: Promise<MeResponse> } | null = null;
+
+/** Busca dados do usuário autenticado (incluindo role). Deduplicado por token. */
 export async function fetchMe(accessToken: string): Promise<MeResponse> {
-  return apiFetch('/me', {}, accessToken);
+  if (_inFlight?.token === accessToken) {
+    return _inFlight.promise;
+  }
+  _inFlight = { token: accessToken, promise: apiFetch('/me', {}, accessToken) };
+  try {
+    const result = await _inFlight.promise;
+    if (typeof window !== 'undefined') {
+      const n = ((window as any).__dbgMeCount = ((window as any).__dbgMeCount || 0) + 1);
+      console.log(`[ME_FETCH] count=${n} role=${result?.role}`);
+    }
+    return result;
+  } finally {
+    if (_inFlight?.token === accessToken) _inFlight = null;
+  }
 }
