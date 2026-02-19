@@ -12,6 +12,12 @@ out/
 build/
 dist/
 
+# Generated reports (PDF)
+data/reports/
+
+# QA / runtime logs
+logs/
+
 # Production
 *.log
 npm-debug.log*
