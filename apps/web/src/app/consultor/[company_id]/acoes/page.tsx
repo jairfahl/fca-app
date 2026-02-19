@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import ConsultorGuard from '@/components/ConsultorGuard';
 import { useAuth } from '@/lib/auth';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,11 +30,9 @@ interface ActionsData {
 export default function ConsultorAcoesPage() {
   return (
     <ProtectedRoute>
-      <ConsultorGuard>
-        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-          <ConsultorAcoesContent />
-        </Suspense>
-      </ConsultorGuard>
+      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+        <ConsultorAcoesContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }

@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useEffect, useCallback } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import ConsultorGuard from '@/components/ConsultorGuard';
 import { useAuth } from '@/lib/auth';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -19,11 +18,9 @@ interface OverviewData {
 export default function ConsultorCompanyPage() {
   return (
     <ProtectedRoute>
-      <ConsultorGuard>
-        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-          <ConsultorCompanyContent />
-        </Suspense>
-      </ConsultorGuard>
+      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+        <ConsultorCompanyContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }
@@ -47,7 +44,7 @@ function ConsultorCompanyContent() {
       setData(res);
     } catch (err: any) {
       if (err instanceof ApiError && err.status === 403) {
-        router.replace('/diagnostico');
+        router.replace('/full');
         return;
       }
       setError(err.message || 'Erro ao carregar');

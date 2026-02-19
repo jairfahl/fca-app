@@ -119,3 +119,12 @@ O loop foi eliminado centralizando `/me` no AuthProvider:
 - Dedupe in-flight em `fetchMe` (api.ts)
 - ConsultorGuard e ProtectedRoute usam `me` do contexto
 - `/me` chamado no máximo 1 vez por sessão (exceto quando token muda)
+
+### Fix RoleGate idempotente (Prompt 3)
+Redirect por role centralizado em `RoleGate`:
+- `RoleGate` lê `me.role` do AuthProvider, usa `usePathname()`
+- `didRedirectRef` garante no máximo 1 redirect
+- Condição: `target !== null` e `target !== pathname`
+- CONSULTOR/ADMIN fora de /consultor|/full/consultor => /consultor
+- USER em /consultor|/full/consultor => /diagnostico
+- ConsultorGuard removido; ProtectedRoute só faz auth

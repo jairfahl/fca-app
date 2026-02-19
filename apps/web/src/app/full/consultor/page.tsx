@@ -52,6 +52,15 @@ interface ConsultantData {
   dashboard: { progress: string; actions: DashboardAction[] };
 }
 
+type CompanyItem = {
+  id: string;
+  name: string;
+  full_status: string | null;
+  full_version: number | null;
+  full_assessment_id: string | null;
+  plan_progress: string | null;
+};
+
 const NOTE_TYPE_OPTIONS = [
   { value: 'ORIENTACAO', label: 'Orientação' },
   { value: 'IMPEDIMENTO', label: 'Impedimento' },
@@ -62,7 +71,14 @@ const NOTE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   NOTE_TYPE_OPTIONS.map((o) => [o.value, o.label])
 );
 
-export default function ConsultorPage() {
+function statusLabel(status: string): string {
+  if (status === 'DRAFT') return 'Em andamento';
+  if (status === 'SUBMITTED') return 'Concluído';
+  if (status === 'CLOSED') return 'Ciclo finalizado';
+  return humanizeStatus(status);
+}
+
+export default function FullConsultorPage() {
   return (
     <ProtectedRoute>
       <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
@@ -81,10 +97,55 @@ function ConsultorContent() {
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ConsultantData | null>(null);
+  const [companies, setCompanies] = useState<CompanyItem[]>([]);
+  const [companyOverview, setCompanyOverview] = useState<{
+    company: { id: string; name: string };
+    full_status: string | null;
+    full_assessment_id: string | null;
+    plan_progress: string | null;
+  } | null>(null);
   const [error, setError] = useState('');
   const [notesByAction, setNotesByAction] = useState<Record<string, ConsultantNote[]>>({});
   const [noteForm, setNoteForm] = useState<Record<string, { note_type: string; note_text: string }>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
+
+  const loadCompanies = useCallback(async () => {
+    if (!session?.access_token) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await apiFetch('/consultor/companies', {}, session.access_token);
+      setCompanies(res?.companies || []);
+    } catch (err: any) {
+      if (err instanceof ApiError && err.status === 403) {
+        router.replace('/full');
+        return;
+      }
+      setError(err?.message || 'Erro ao carregar empresas');
+    } finally {
+      setLoading(false);
+    }
+  }, [session?.access_token, router]);
+
+  const loadCompanyOverview = useCallback(async () => {
+    if (!companyId || !session?.access_token) return;
+    setError('');
+    try {
+      const res = await apiFetch(`/consultor/company/${companyId}/overview`, {}, session.access_token);
+      setCompanyOverview({
+        company: res.company,
+        full_status: res.full_status || null,
+        full_assessment_id: res.full_assessment_id || null,
+        plan_progress: res.plan_progress || null,
+      });
+    } catch (err: any) {
+      if (err instanceof ApiError && err.status === 403) {
+        router.replace('/full');
+        return;
+      }
+      setError(err?.message || 'Erro ao carregar empresa');
+    }
+  }, [companyId, session?.access_token, router]);
 
   const loadConsultorView = useCallback(async () => {
     if (!assessmentId || !session?.access_token) return;
@@ -131,8 +192,20 @@ function ConsultorContent() {
   );
 
   useEffect(() => {
-    loadConsultorView();
-  }, [loadConsultorView]);
+    if (assessmentId) {
+      loadConsultorView();
+    } else {
+      loadCompanies();
+    }
+  }, [assessmentId, loadConsultorView, loadCompanies]);
+
+  useEffect(() => {
+    if (companyId && !assessmentId) {
+      loadCompanyOverview();
+    } else {
+      setCompanyOverview(null);
+    }
+  }, [companyId, assessmentId, loadCompanyOverview]);
 
   useEffect(() => {
     if (data?.dashboard?.actions) {
@@ -164,7 +237,7 @@ function ConsultorContent() {
     }
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
         <div style={{ textAlign: 'center' }}>Carregando...</div>
@@ -172,25 +245,157 @@ function ConsultorContent() {
     );
   }
 
-  if (!assessmentId) {
+  // Modo 1: Lista de empresas (home do consultor)
+  if (!assessmentId && !companyId) {
     return (
       <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{ padding: '1rem', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '8px' }}>
-          {labels.missingParams}
+        <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>
+          {labels.consultantLoginLabel} {user?.email}
         </div>
-        <Link href="/full" style={{ display: 'inline-block', marginTop: '1rem', color: '#0070f3' }}>
-          Voltar ao FULL
-        </Link>
+        <h1 style={{ marginBottom: '1.5rem' }}>Área do consultor — Diagnóstico FULL</h1>
+        <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <Link href="/logout" style={{ color: '#0070f3' }}>Sair</Link>
+          <span style={{ color: '#dee2e6' }}>|</span>
+          <Link href="/consultor" style={{ color: '#0070f3' }}>Pedidos de ajuda e visão LIGHT</Link>
+        </div>
+
+        {error && (
+          <div style={{ padding: '1rem', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '8px', marginBottom: '1rem' }}>
+            {error}
+          </div>
+        )}
+
+        <h2 style={{ marginBottom: '1rem' }}>Empresas</h2>
+        {companies.length === 0 ? (
+          <p style={{ color: '#666' }}>Nenhuma empresa cadastrada.</p>
+        ) : (
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {companies.map((c) => (
+              <li key={c.id} style={{ marginBottom: '0.5rem' }}>
+                <Link
+                  href={`/full/consultor?company_id=${c.id}`}
+                  style={{
+                    display: 'block',
+                    padding: '1rem 1.25rem',
+                    backgroundColor: '#fff',
+                    borderRadius: '8px',
+                    textDecoration: 'none',
+                    color: '#212529',
+                    border: '1px solid #dee2e6',
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{c.name}</span>
+                  {c.full_status && (
+                    <span style={{ marginLeft: '0.5rem', fontSize: '0.9rem', color: '#6c757d' }}>
+                      — v{c.full_version ?? '?'} {statusLabel(c.full_status)}
+                      {c.plan_progress && ` (${c.plan_progress})`}
+                    </span>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     );
   }
 
+  // Modo 2: Visão da empresa (company_id, sem assessment_id) — links para histórico, dashboard, relatório
+  if (companyId && !assessmentId) {
+    const ov = companyOverview;
+    const companyName = ov?.company?.name || companyId;
+    return (
+      <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+        <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>
+          {labels.consultantLoginLabel} {user?.email}
+        </div>
+        <div style={{ marginBottom: '1.5rem' }}>
+          <Link href="/full/consultor" style={{ color: '#0070f3' }}>← Empresas</Link>
+        </div>
+        <h1 style={{ marginBottom: '1.5rem' }}>{companyName}</h1>
+        {ov && (
+          <div style={{ marginBottom: '0.5rem', color: '#6c757d' }}>
+            {ov.full_status && `Diagnóstico FULL — ${statusLabel(ov.full_status)}`}
+            {ov.plan_progress && ` • Progresso: ${ov.plan_progress}`}
+          </div>
+        )}
+        {error && (
+          <div style={{ padding: '1rem', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '8px', marginBottom: '1rem' }}>
+            {error}
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+          <Link
+            href={`/full/historico?company_id=${companyId}`}
+            style={{
+              display: 'inline-block',
+              padding: '0.65rem 1rem',
+              backgroundColor: '#0d6efd',
+              color: '#fff',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            Histórico de versões
+          </Link>
+          <Link
+            href={`/full/relatorio?company_id=${companyId}`}
+            style={{
+              display: 'inline-block',
+              padding: '0.65rem 1rem',
+              backgroundColor: '#198754',
+              color: '#fff',
+              borderRadius: '8px',
+              textDecoration: 'none',
+              fontWeight: 'bold',
+            }}
+          >
+            Relatório PDF
+          </Link>
+          {ov?.full_assessment_id && (
+            <Link
+              href={`/full/dashboard?company_id=${companyId}&assessment_id=${ov.full_assessment_id}`}
+              style={{
+                display: 'inline-block',
+                padding: '0.65rem 1rem',
+                backgroundColor: '#6f42c1',
+                color: '#fff',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: 'bold',
+              }}
+            >
+              Dashboard / Acompanhar execução
+            </Link>
+          )}
+          {ov?.full_assessment_id && (
+            <Link
+              href={`/full/consultor?company_id=${companyId}&assessment_id=${ov.full_assessment_id}`}
+              style={{
+                display: 'inline-block',
+                padding: '0.65rem 1rem',
+                backgroundColor: '#6c757d',
+                color: '#fff',
+                borderRadius: '8px',
+                textDecoration: 'none',
+                fontWeight: 'bold',
+              }}
+            >
+              Ver ações e notas
+            </Link>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Modo 3: Detalhe do assessment (assessment_id) — visão existente com notas
   return (
     <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
       <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>
         {labels.consultantLoginLabel} {user?.email}
       </div>
-
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
         <h1 style={{ margin: 0 }}>Diagnóstico FULL</h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -209,7 +414,7 @@ function ConsultorContent() {
             {labels.followExecution}
           </Link>
           <Link
-            href={`/full?company_id=${data?.assessment?.company_id || companyId || ''}`}
+            href={`/full/consultor?company_id=${data?.assessment?.company_id || companyId || ''}`}
             style={{
               display: 'inline-block',
               backgroundColor: '#6c757d',
@@ -220,7 +425,21 @@ function ConsultorContent() {
               fontSize: '0.9rem',
             }}
           >
-            Voltar ao FULL
+            Voltar à empresa
+          </Link>
+          <Link
+            href="/full/consultor"
+            style={{
+              display: 'inline-block',
+              backgroundColor: '#6c757d',
+              color: '#fff',
+              padding: '0.5rem 1rem',
+              borderRadius: '6px',
+              textDecoration: 'none',
+              fontSize: '0.9rem',
+            }}
+          >
+            Empresas
           </Link>
         </div>
       </div>
