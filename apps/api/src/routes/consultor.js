@@ -229,15 +229,21 @@ router.get('/full/:assessment_id', async (req, res) => {
   }
 });
 
-// GET /consultor/companies — lista empresas: company_id, nome, owner_user_id, created_at, entitlement (LIGHT/FULL status)
+// GET /consultor/companies — lista TODAS as empresas (CONSULTOR/ADMIN).
+// Usa supabase com SUPABASE_SERVICE_ROLE_KEY (bypass RLS) — leitura transversal server-side.
+// Guard requireConsultorOrAdmin garante que USER retorna 403.
 router.get('/companies', async (req, res) => {
   const ROUTE = 'GET /consultor/companies';
   try {
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 200));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
     const { data: companies, error } = await supabase
       .schema('public')
       .from('companies')
-      .select('id, name, trade_name, owner_user_id, created_at')
-      .order('name');
+      .select('id, name, owner_user_id, created_at')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       logConsultorError(ROUTE, req, error, { phase: 'companies_select' });
@@ -283,7 +289,7 @@ router.get('/companies', async (req, res) => {
 
         return {
           company_id: c.id,
-          name: c.trade_name || c.name || null,
+          name: c.name || null,
           owner_user_id: c.owner_user_id || null,
           created_at: c.created_at || null,
           entitlement,

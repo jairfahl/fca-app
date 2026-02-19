@@ -22,6 +22,18 @@ fca-mtr/
 └── .cursor/rules/    # Regras Cursor (derivadas dos AGENTS)
 ```
 
+## Papéis e acesso
+
+| Papel | Descrição | Rotas |
+|-------|-----------|-------|
+| **USER** | Fluxo normal: sua empresa, diagnósticos, ações, evidências. Botão "Solicitar ajuda". | `/full`, `/full/wizard`, `/full/dashboard`, etc. |
+| **CONSULTOR** | Acesso transversal: vê diagnósticos (LIGHT/FULL) em modo leitura, mensagens dos usuários, pedidos de ajuda. **Não preenche** diagnóstico. Pode registrar notas em ações FULL e responder mensagens. | `/consultor` (home), `/consultor/user/[id]`, `/consultor/light/[id]`, `/consultor/full/[id]`, `/full/consultor` |
+| **ADMIN** | Mesmo que CONSULTOR + pode ativar modo teste. | Todas as rotas |
+
+- **Fonte da role**: `app_metadata.role` ou `user_metadata.role` no JWT. Fallback: `USER`.
+- **Backend**: `requireConsultorOrAdmin` em rotas `/consultor/*`. `blockConsultorOnMutation` bloqueia CONSULTOR em rotas de preenchimento (LIGHT/FULL). CONSULTOR é read-only em diagnósticos.
+- **Frontend**: `ConsultorGuard` em `/consultor/*` e `/full/consultor`. `ProtectedRoute` redireciona CONSULTOR/ADMIN para `/consultor` ao tentar acessar rotas de usuário.
+
 ## Princípios inegociáveis
 
 | Princípio | Descrição |
@@ -38,6 +50,7 @@ fca-mtr/
 - **Rotas**: `/light/*` (diagnóstico rápido), `/full/*` (diagnóstico completo)
 - **Persistência**: Supabase/PostgreSQL
 - **Autenticação**: Supabase Auth, JWT (validação criptográfica)
+- **Supabase Service Role**: `SUPABASE_SERVICE_ROLE_KEY` (env) — client em `lib/supabase.js`. Usado para leitura transversal em `/consultor/*` (bypass RLS). Nunca expor ao frontend.
 - **Regras**: `apps/api/AGENTS.md`
 
 ### Frontend (apps/web)
