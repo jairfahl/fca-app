@@ -105,10 +105,29 @@ async function getOrCreateCurrentFullAssessment(companyId, userId, opts = {}) {
   // 4) Criar novo DRAFT
   const segment = companySegmentToFull(company.segment);
   const expectedRaw = ['COMERCIO', 'INDUSTRIA', 'SERVICOS', 'C', 'I', 'S'];
-  const rawOk = company.segment && expectedRaw.includes(String(company.segment).toUpperCase());
-  if (!rawOk) {
+  if (!company.segment || !expectedRaw.includes(String(company.segment).toUpperCase())) {
     console.warn('[FULL_CURRENT] segment fallback aplicado', { company_id: companyId, segment_raw: company.segment, segment_final: segment });
   }
+
+  const { data: maxRow } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .select('full_version')
+    .eq('company_id', companyId)
+    .order('full_version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextVersion = (maxRow?.full_version ?? 0) + 1;
+
+  const { data: lastClosed } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('status', 'CLOSED')
+    .order('closed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   const { data: created, error: insertErr } = await supabase
     .schema('public')
@@ -116,8 +135,10 @@ async function getOrCreateCurrentFullAssessment(companyId, userId, opts = {}) {
     .insert({
       company_id: companyId,
       created_by_user_id: userId,
-      segment: segment,
+      segment,
       status: 'DRAFT',
+      full_version: nextVersion,
+      parent_full_assessment_id: lastClosed?.id ?? null,
     })
     .select()
     .single();
@@ -129,4 +150,83 @@ async function getOrCreateCurrentFullAssessment(companyId, userId, opts = {}) {
   return { assessment: created, company };
 }
 
-module.exports = { getOrCreateCurrentFullAssessment, companySegmentToFull, FullCurrentError, logFullCurrentError };
+/**
+ * Cria nova versão FULL (refazer diagnóstico). DRAFT vazio, full_version = last+1.
+ * Idempotente: se já existir DRAFT, retorna o existente.
+ *
+ * @param {string} companyId
+ * @param {string} userId
+ * @returns {{ assessment: object, company: object, isNew: boolean }}
+ * @throws {FullCurrentError}
+ */
+async function createNewFullVersion(companyId, userId) {
+  const { data: company, error: companyErr } = await supabase
+    .schema('public')
+    .from('companies')
+    .select('id, name, segment')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  if (companyErr) throw new FullCurrentError('fetch_company', companyErr.message, companyErr);
+  if (!company) throw new FullCurrentError('fetch_company', 'Empresa não encontrada', null);
+
+  const { data: existingDraft, error: findErr } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('status', 'DRAFT')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (findErr) throw new FullCurrentError('fetch_assessment', findErr.message, findErr);
+  if (existingDraft) return { assessment: existingDraft, company, isNew: false };
+
+  const { data: maxRow } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .select('full_version')
+    .eq('company_id', companyId)
+    .order('full_version', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = (maxRow?.full_version ?? 0) + 1;
+
+  const { data: lastClosed } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .select('id')
+    .eq('company_id', companyId)
+    .eq('status', 'CLOSED')
+    .order('closed_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const segment = companySegmentToFull(company.segment);
+  const { data: created, error: insertErr } = await supabase
+    .schema('public')
+    .from('full_assessments')
+    .insert({
+      company_id: companyId,
+      created_by_user_id: userId,
+      segment,
+      status: 'DRAFT',
+      full_version: nextVersion,
+      parent_full_assessment_id: lastClosed?.id ?? null,
+    })
+    .select()
+    .single();
+
+  if (insertErr) throw new FullCurrentError('create_draft', insertErr.message, insertErr);
+  return { assessment: created, company, isNew: true };
+}
+
+module.exports = {
+  getOrCreateCurrentFullAssessment,
+  createNewFullVersion,
+  companySegmentToFull,
+  FullCurrentError,
+  logFullCurrentError,
+};

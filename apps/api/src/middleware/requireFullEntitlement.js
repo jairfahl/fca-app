@@ -27,6 +27,13 @@ async function requireFullEntitlement(req, res, next) {
 
     const userId = req.user.id;
     const userEmail = req.user.email || null;
+    const role = req.user?.role || 'USER';
+
+    // CONSULTOR e ADMIN: acesso transversal a qualquer company (bypass entitlement)
+    if (role === 'CONSULTOR' || role === 'ADMIN') {
+      console.log(`FULL_GATE_OK role=${role} company_id=${companyId}`);
+      return next();
+    }
 
     const allowed = await canAccessFull({
       userEmail,

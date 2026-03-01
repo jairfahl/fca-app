@@ -6,6 +6,22 @@ Alterações notáveis do projeto FCA-MTR.
 
 ## [Unreleased]
 
+### Documentação (2025-02-19)
+
+- **Rotas consultor padronizadas:** CONSULTOR_NAV_AUDIT.md atualizado com rotas atuais (overview, redirects, RoleGate).
+- **ARCHITECTURE.md, README.md, roles.md:** Rotas CONSULTOR atualizadas (home `/consultor`, overview `/consultor/company/[id]/overview`).
+- **QUESTIONS_CATALOG.md:** Novo documento com tabelas de perguntas LIGHT (12), FULL (48 por processo), causa raiz (12).
+- **catalogs/full/README.md:** Referência a `cause_engine.v1.json` no catálogo.
+- **QA_CONSULTOR_SMOKE.md:** URL da overview atualizada para `/consultor/company/:id/overview`.
+
+### Fase 7 — Relatórios e Versionamento
+
+- **Relatórios PDF:** Geração e download de relatórios (gerar → status → download). Endpoint retorna 200 e `Content-Type: application/pdf`.
+- **Histórico de versões:** Versões ordenadas por `full_version` desc; incremento correto entre v1, v2, etc.
+- **Comparação entre versões:** `GET /full/compare?from=1&to=2` retorna JSON com `from_version`, `to_version`, `evolution_by_process`.
+- **Papéis USER / CONSULTOR / ADMIN:** Guards de role; USER recebe 403 em rotas de consultor (`/consultor/companies`).
+- **Testes E2E:** Script `scripts/e2e-reports-versions-roles.js` cobre relatórios, versões, comparação e roles. Documentação em `scripts/test-full-reports-versions-roles.md`. Comando: `npm run e2e:reports`.
+
 ### Backend (API)
 
 - **Submit FULL:** Validação de pré-condições antes de gerar findings. Retorna 400 `DIAG_INCOMPLETE` com `missing_process_keys`, `answered_count`, `total_expected` quando faltam respostas. Retorna 500 `CATALOG_INVALID` se catálogo inconsistente.

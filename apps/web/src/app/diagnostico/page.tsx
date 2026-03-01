@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ConsultorBlock from '@/components/ConsultorBlock';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -120,9 +121,11 @@ function buildQuestions(segment?: string | null): Question[] {
 export default function DiagnosticoPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-        <DiagnosticoContent />
-      </Suspense>
+      <ConsultorBlock>
+        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+          <DiagnosticoContent />
+        </Suspense>
+      </ConsultorBlock>
     </ProtectedRoute>
   );
 }

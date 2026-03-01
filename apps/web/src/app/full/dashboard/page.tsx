@@ -6,8 +6,20 @@ import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
-import { humanizeActionStatus, labels } from '@/lib/uiCopy';
+import { humanizeActionStatus, humanizeBandInText, labels } from '@/lib/uiCopy';
 import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+import PedirApoioButton from '@/components/PedirApoioButton';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
+
+type SixPackItem = {
+  title: string;
+  o_que_acontece: string;
+  custo_nao_agir: string;
+  muda_em_30_dias: string;
+  primeiro_passo?: string | null;
+};
+
+type SixPack = { vazamentos: SixPackItem[]; alavancas: SixPackItem[] };
 
 function displayActionTitle(title: string): string {
   return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
@@ -56,6 +68,7 @@ interface DashboardAction {
 }
 
 interface DashboardData {
+  assessment_id?: string;
   progress: string;
   next_action_key: string | null;
   actions: DashboardAction[];
@@ -103,6 +116,8 @@ function FullDashboardContent() {
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [closeLoading, setCloseLoading] = useState(false);
   const [newCycleLoading, setNewCycleLoading] = useState(false);
+  const [sixPack, setSixPack] = useState<SixPack | null>(null);
+  const [sixPackLoading, setSixPackLoading] = useState(false);
   const actionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const focusActionKey = searchParams.get('action_key');
@@ -114,6 +129,29 @@ function FullDashboardContent() {
       actionRefs.current[focusActionKey]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [loading, data?.actions, focusActionKey]);
+
+  const effectiveAssessmentId = assessmentId || data?.assessment_id || null;
+  useEffect(() => {
+    if (!companyId || !effectiveAssessmentId || !session?.access_token || loading) return;
+    const status = data?.assessment_status;
+    if (status !== 'SUBMITTED' && status !== 'CLOSED') return;
+    const loadResults = async () => {
+      setSixPackLoading(true);
+      try {
+        const res = await apiFetch(
+          `/full/results?company_id=${companyId}&assessment_id=${effectiveAssessmentId}`,
+          {},
+          session.access_token
+        );
+        setSixPack(res?.six_pack || { vazamentos: [], alavancas: [] });
+      } catch {
+        setSixPack(null);
+      } finally {
+        setSixPackLoading(false);
+      }
+    };
+    loadResults();
+  }, [companyId, effectiveAssessmentId, session?.access_token, loading, data?.assessment_status]);
 
   const loadDashboard = useCallback(async () => {
     if (!companyId || !session?.access_token) return;
@@ -311,6 +349,26 @@ function FullDashboardContent() {
     }
   };
 
+  const handleRefazerDiagnostico = async () => {
+    if (!companyId || !session?.access_token) return;
+    setNewCycleLoading(true);
+    try {
+      const res = await apiFetch(
+        `/full/versions/new?company_id=${companyId}`,
+        { method: 'POST' },
+        session.access_token
+      );
+      const aid = res?.assessment_id;
+      if (aid) {
+        router.replace(`/full/wizard?company_id=${companyId}&assessment_id=${aid}`);
+      }
+    } catch (err: any) {
+      alert(err?.message || 'Erro ao criar novo diagnóstico');
+    } finally {
+      setNewCycleLoading(false);
+    }
+  };
+
   const nextAction = data?.actions?.find((a) => a.action_key === data?.next_action_key);
   const isClosed = data?.assessment_status === 'CLOSED';
   const canClose = data?.progress === '3/3' && !isClosed && data?.actions?.every((a) => a.status === 'DONE' || a.status === 'DROPPED');
@@ -345,7 +403,12 @@ function FullDashboardContent() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', marginBottom: '2rem' }}>
         <h1 style={{ margin: 0 }}>Dashboard FULL</h1>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          {companyId && <SolicitarAjudaButton companyId={companyId} />}
+          {companyId && (
+            <>
+              <PedirAjudaConsultor companyId={companyId} />
+              <SolicitarAjudaButton companyId={companyId} />
+            </>
+          )}
           <Link
             href={`/full?company_id=${companyId}`}
             style={{
@@ -443,7 +506,7 @@ function FullDashboardContent() {
                 </ul>
                 <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                   <button
-                    onClick={handleNewCycle}
+                    onClick={handleRefazerDiagnostico}
                     disabled={newCycleLoading}
                     style={{
                       padding: '0.5rem 1rem',
@@ -454,30 +517,142 @@ function FullDashboardContent() {
                       cursor: 'pointer',
                       fontWeight: 'bold',
                     }}
+                    data-testid="cta-refazer-diagnostico"
+                  >
+                    {newCycleLoading ? 'Criando...' : 'Fazer novo diagnóstico para medir evolução'}
+                  </button>
+                  <button
+                    onClick={handleNewCycle}
+                    disabled={newCycleLoading}
+                    style={{
+                      padding: '0.5rem 1rem',
+                      borderRadius: '6px',
+                      border: '1px solid #0d6efd',
+                      backgroundColor: 'transparent',
+                      color: '#0d6efd',
+                      cursor: 'pointer',
+                      fontWeight: 'bold',
+                    }}
                     data-testid="cta-new-cycle"
                   >
                     {newCycleLoading ? 'Iniciando...' : 'Iniciar novo ciclo (mais 3 movimentos)'}
                   </button>
                   {assessmentId && (
-                    <Link
-                      href={`/full/resultados?company_id=${companyId}&assessment_id=${assessmentId}`}
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.5rem 1rem',
-                        borderRadius: '6px',
-                        backgroundColor: '#6c757d',
-                        color: '#fff',
-                        textDecoration: 'none',
-                        fontWeight: 'bold',
-                      }}
-                    >
-                      Ver resultados do diagnóstico
-                    </Link>
+                    <>
+                      <Link
+                        href={`/full/resultados?company_id=${companyId}&assessment_id=${assessmentId}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#6c757d',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Ver resultados do diagnóstico
+                      </Link>
+                      <Link
+                        href={`/full/relatorio?company_id=${companyId}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#198754',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          fontWeight: 'bold',
+                        }}
+                        data-testid="cta-relatorio"
+                      >
+                        Baixar relatório PDF
+                      </Link>
+                      <Link
+                        href={`/full/historico?company_id=${companyId}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#6c757d',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        Histórico de versões
+                      </Link>
+                    </>
                   )}
                 </div>
               </>
             )}
           </div>
+
+          {(isClosed || data.assessment_status === 'SUBMITTED') && (sixPack?.vazamentos?.length || sixPack?.alavancas?.length) ? (
+            <div style={{ marginBottom: '2rem', border: '1px solid #dee2e6', borderRadius: '8px', padding: '1.25rem', backgroundColor: '#fff' }}>
+              <h2 style={{ margin: '0 0 1rem 0' }}>Raio-X do dono</h2>
+              {sixPackLoading ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: '#6c757d' }}>Carregando diagnóstico...</div>
+              ) : (
+                <>
+                  {sixPack.vazamentos?.length ? (
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <h3 style={{ marginBottom: '0.75rem' }}>3 Vazamentos</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                        {sixPack.vazamentos.map((item, i) => (
+                          <div
+                            key={`v-${i}`}
+                            style={{ textAlign: 'left', border: '1px solid #dee2e6', borderRadius: '8px', background: '#fff', padding: '1rem' }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{humanizeBandInText(item.title)}</div>
+                            <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {item.o_que_acontece || '—'}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#6c757d' }}><strong>{labels.raioXCusto}:</strong> {item.custo_nao_agir || '—'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {sixPack.alavancas?.length ? (
+                    <div>
+                      <h3 style={{ marginBottom: '0.75rem' }}>3 Alavancas</h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
+                        {sixPack.alavancas.map((item, i) => (
+                          <div
+                            key={`a-${i}`}
+                            style={{ textAlign: 'left', border: '1px solid #dee2e6', borderRadius: '8px', background: '#fff', padding: '1rem' }}
+                          >
+                            <div style={{ fontWeight: 600, marginBottom: '0.5rem' }}>{humanizeBandInText(item.title)}</div>
+                            <div style={{ fontSize: '0.9rem', marginBottom: '0.35rem' }}><strong>{labels.raioXWhatHappening}:</strong> {item.o_que_acontece || '—'}</div>
+                            <div style={{ fontSize: '0.85rem', color: '#6c757d' }}><strong>{labels.raioXCusto}:</strong> {item.custo_nao_agir || '—'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {effectiveAssessmentId && (
+                    <div style={{ marginTop: '1rem' }}>
+                      <Link
+                        href={`/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.5rem 1rem',
+                          borderRadius: '6px',
+                          backgroundColor: '#6f42c1',
+                          color: '#fff',
+                          textDecoration: 'none',
+                          fontWeight: 600,
+                          fontSize: '0.9rem',
+                        }}
+                      >
+                        Ver diagnóstico completo
+                      </Link>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : null}
 
           {(!data.actions || data.actions.length === 0) && (
             <div style={{ padding: '2rem', textAlign: 'center', backgroundColor: '#f8f9fa', borderRadius: '8px', color: '#666' }}>
@@ -681,9 +856,19 @@ function ActionCard({
         </div>
       )}
 
-      {!actionClosed && !cycleClosed && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
-          <Link
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+        {companyId && assessmentId && (
+          <PedirApoioButton
+            companyId={companyId}
+            assessmentId={assessmentId}
+            actionId={action.action_key}
+            actionTitle={displayActionTitle(action.title)}
+            label="Pedir apoio"
+          />
+        )}
+        {!actionClosed && !cycleClosed && (
+          <>
+            <Link
             href={`/full/acao/${encodeURIComponent(action.action_key)}?assessment_id=${assessmentId}&company_id=${companyId}`}
             style={{ ...btnStyle('#6f42c1'), textDecoration: 'none', display: 'inline-block' }}
           >
@@ -704,11 +889,12 @@ function ActionCard({
               {labels.markDone}
             </button>
           )}
-          <button onClick={onDrop} disabled={disabled} style={btnStyle('#dc3545')}>
-            {labels.dropAction}
-          </button>
-        </div>
-      )}
+            <button onClick={onDrop} disabled={disabled} style={btnStyle('#dc3545')}>
+              {labels.dropAction}
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

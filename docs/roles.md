@@ -33,6 +33,12 @@ npm run auth:bootstrap
 ```
 Cria/atualiza os três usuários via Auth API (senha `senha123`, roles em `app_metadata.role`).
 
+**Empresa de teste para consultor (fca@fca.com):**
+```bash
+npm run db:seed:consultor
+```
+Cria empresa FCA para fca@fca.com se não existir. Necessário para que a home do consultor liste usuários.
+
 **Garantir roles corretos (consultor@fca.com = CONSULTOR, etc.):**
 ```bash
 # Opção 1: via Auth API
@@ -82,6 +88,6 @@ Requer Bearer token. Retorna:
 ## Frontend
 
 - **Pós-login:** USER → /onboarding; CONSULTOR/ADMIN → /consultor
-- **Área consultor:** /consultor, /consultor/[company_id], /consultor/[company_id]/acoes
+- **Área consultor:** /consultor (home), /consultor/companies, /consultor/company/[company_id]/overview, /consultor/user/[user_id]?company_id=, /consultor/company/[company_id]/historico, /consultor/company/[company_id]/relatorio
 - **USER:** botão "Solicitar ajuda" em dashboard, resultados, ações
 - **USER:** sem link "Visão consultor" no fluxo

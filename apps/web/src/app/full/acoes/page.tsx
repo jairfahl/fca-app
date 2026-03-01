@@ -2,12 +2,14 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ConsultorBlock from '@/components/ConsultorBlock';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import { humanizeLevelBand, labels } from '@/lib/uiCopy';
 import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
 
 function displayActionTitle(title: string): string {
   return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
@@ -25,6 +27,8 @@ type Suggestion = {
   metric_hint?: string;
   dod_checklist?: string[];
   why?: WhyItem[];
+  evidence_keys?: string[];
+  is_gap_content?: boolean;
 };
 
 type DraftSelection = {
@@ -47,9 +51,11 @@ const PROCESS_LABELS: Record<string, string> = {
 export default function FullAcoesPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-        <FullAcoesContent />
-      </Suspense>
+      <ConsultorBlock>
+        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+          <FullAcoesContent />
+        </Suspense>
+      </ConsultorBlock>
     </ProtectedRoute>
   );
 }
@@ -263,14 +269,17 @@ function FullAcoesContent() {
   return (
     <div style={{ padding: '2rem', maxWidth: '980px', margin: '0 auto' }}>
       <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>Logado como: {user?.email}</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem', alignItems: 'center' }}>
         <h1 style={{ margin: 0 }}>{labels.planMinimal}</h1>
-        <Link
-          href={state === 'error' && companyId ? `/full?company_id=${companyId}` : (companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados')}
-          style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none' }}
-        >
-          {state === 'error' ? 'Voltar ao FULL' : 'Voltar aos resultados'}
-        </Link>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {companyId && <PedirAjudaConsultor companyId={companyId} />}
+          <Link
+            href={state === 'error' && companyId ? `/full?company_id=${companyId}` : (companyId && effectiveAssessmentId ? `/full/resultados?company_id=${companyId}&assessment_id=${effectiveAssessmentId}` : '/full/resultados')}
+            style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none' }}
+          >
+            {state === 'error' ? 'Voltar ao FULL' : 'Voltar aos resultados'}
+          </Link>
+        </div>
       </div>
 
       {state === 'loading' && <div style={{ padding: '2rem', textAlign: 'center' }}>Carregando sugestões...</div>}

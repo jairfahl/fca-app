@@ -54,14 +54,14 @@ export default function LoginPage() {
 
       try {
         const me = await fetchMe(token);
-        const role = me.role || 'USER';
+        const role = me?.role ?? 'USER';
         if (role === 'CONSULTOR' || role === 'ADMIN') {
-          router.push('/consultor');
+          router.replace('/consultor');
         } else {
-          router.push('/onboarding');
+          router.replace('/onboarding');
         }
       } catch {
-        router.push('/onboarding');
+        router.replace('/onboarding');
       }
     } catch (err: any) {
       setError(err.message || 'Erro ao fazer login');

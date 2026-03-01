@@ -16,7 +16,7 @@ router.post('/help-requests', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'company_id e context são obrigatórios' });
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, company_id, req.user.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, company_id, req.user.email, req.user?.role);
     if (!company) {
       return res.status(403).json({ error: 'Sem acesso a esta empresa' });
     }

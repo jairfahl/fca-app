@@ -9,7 +9,7 @@ const request = require('supertest');
 
 jest.mock('../src/middleware/requireAuth', () => ({
   requireAuth: (req, res, next) => {
-    req.user = { id: 'user-1', email: 'test@example.com', role: 'CONSULTOR' };
+    req.user = { id: 'user-1', email: 'test@example.com', role: 'USER' };
     return next();
   }
 }));

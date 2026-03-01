@@ -6,12 +6,16 @@ import { useAuth } from '@/lib/auth';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
+import { consultantCompanyOverview, consultantLight, consultantFull, consultantCompanyAssessment } from '@/lib/consultorRoutes';
+import { userBreadcrumb } from '@/components/ConsultorBreadcrumb';
 
-type Tab = 'diagnosticos' | 'mensagens';
+type Tab = 'diagnosticos' | 'mensagens' | 'acoes';
 
 interface DiagnosticosData {
   user_id: string;
+  email: string | null;
   company_id: string;
+  company_name: string | null;
   light: Array<{ id: string; status: string; created_at: string; submitted_at: string | null }>;
   full: Array<{ id: string; status: string; created_at: string; submitted_at: string | null; closed_at: string | null }>;
 }
@@ -111,18 +115,33 @@ function ConsultorUserContent() {
     );
   }
 
+  const companyName = diagnosticos?.company_name || companyId;
+  const hasFull = (diagnosticos?.full?.length ?? 0) > 0;
+
   return (
     <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1.5rem' }}>
-        <Link href="/consultor" style={{ color: '#0070f3' }}>← Usuários</Link>
+      {userBreadcrumb(companyId, companyName, userId, diagnosticos?.email ?? null)}
+      <div style={{ marginBottom: '1rem' }}>
+        <Link href={consultantCompanyOverview(companyId)} style={{ color: '#0070f3', textDecoration: 'none' }}>
+          ← Voltar à empresa
+        </Link>
       </div>
 
-      <h1 style={{ marginBottom: '1.5rem' }}>Usuário {userId}</h1>
-      {companyId && <p style={{ color: '#666', marginBottom: '1rem' }}>Empresa: {companyId}</p>}
+      <h1 style={{ marginBottom: '1.5rem' }} title={diagnosticos?.user_id ? `ID: ${diagnosticos.user_id}` : undefined}>
+        {diagnosticos?.email || 'Usuário'}
+      </h1>
+      {companyId && (
+        <p style={{ color: '#666', marginBottom: '1rem' }} title={`ID empresa: ${companyId}`}>
+          Empresa: {diagnosticos?.company_name || companyId}
+        </p>
+      )}
 
       {error && (
         <div style={{ padding: '1rem', backgroundColor: '#f8d7da', color: '#721c24', borderRadius: '8px', marginBottom: '1rem' }}>
-          {error}
+          <div style={{ marginBottom: '0.5rem' }}>{error}</div>
+          <Link href={consultantCompanyOverview(companyId)} style={{ color: '#721c24', textDecoration: 'underline', fontWeight: 600 }}>
+            Voltar à empresa
+          </Link>
         </div>
       )}
 
@@ -153,6 +172,21 @@ function ConsultorUserContent() {
         >
           Mensagens
         </button>
+        {hasFull && (
+          <button
+            onClick={() => setTab('acoes')}
+            style={{
+              padding: '0.5rem 1rem',
+              border: 'none',
+              background: tab === 'acoes' ? '#0d6efd' : 'transparent',
+              color: tab === 'acoes' ? '#fff' : '#212529',
+              cursor: 'pointer',
+              borderRadius: '6px 6px 0 0',
+            }}
+          >
+            Ações / Plano
+          </button>
+        )}
       </div>
 
       {tab === 'diagnosticos' && diagnosticos && (
@@ -165,7 +199,7 @@ function ConsultorUserContent() {
               {diagnosticos.light.map((a) => (
                 <li key={a.id} style={{ marginBottom: '0.5rem' }}>
                   <Link
-                    href={`/consultor/light/${a.id}?company_id=${companyId}`}
+                    href={consultantLight(companyId, a.id)}
                     style={{
                       display: 'inline-block',
                       padding: '0.75rem 1rem',
@@ -190,7 +224,7 @@ function ConsultorUserContent() {
               {diagnosticos.full.map((a) => (
                 <li key={a.id} style={{ marginBottom: '0.5rem' }}>
                   <Link
-                    href={`/consultor/full/${a.id}?company_id=${companyId}`}
+                    href={consultantFull(companyId, a.id)}
                     style={{
                       display: 'inline-block',
                       padding: '0.75rem 1rem',
@@ -260,6 +294,34 @@ function ConsultorUserContent() {
               {submitting ? 'Enviando...' : 'Enviar'}
             </button>
           </div>
+        </div>
+      )}
+
+      {tab === 'acoes' && diagnosticos && diagnosticos.full.length > 0 && (
+        <div>
+          <h2 style={{ marginBottom: '1rem' }}>Ações / Plano</h2>
+          <p style={{ color: '#6c757d', marginBottom: '1rem', fontSize: '0.9rem' }}>
+            Acompanhe o plano de 30 dias e evidências do diagnóstico FULL.
+          </p>
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+            {diagnosticos.full.map((a) => (
+              <li key={a.id} style={{ marginBottom: '0.5rem' }}>
+                <Link
+                  href={consultantCompanyAssessment(companyId, a.id, 'FULL')}
+                  style={{
+                    display: 'inline-block',
+                    padding: '0.75rem 1rem',
+                    backgroundColor: '#f8f9fa',
+                    borderRadius: '6px',
+                    textDecoration: 'none',
+                    color: '#212529',
+                  }}
+                >
+                  Ver plano e ações — {a.status} — {new Date(a.created_at).toLocaleDateString('pt-BR')}
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, type CSSProperties } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ConsultorBlock from '@/components/ConsultorBlock';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -57,9 +58,11 @@ const PROCESS_LABELS: Record<string, string> = {
 export default function FullPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-        <FullContent />
-      </Suspense>
+      <ConsultorBlock>
+        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+          <FullContent />
+        </Suspense>
+      </ConsultorBlock>
     </ProtectedRoute>
   );
 }
@@ -167,19 +170,43 @@ function FullContent() {
             <Link href={`/full/dashboard?company_id=${companyId}&assessment_id=${current.id}`} style={cta('#198754')}>
               Dashboard FULL
             </Link>
+            <Link href={`/full/relatorio?company_id=${companyId}`} style={cta('#6c757d')}>
+              Relatório PDF
+            </Link>
+            <Link href={`/full/historico?company_id=${companyId}`} style={cta('#6c757d')}>
+              Histórico de versões
+            </Link>
           </div>
         </div>
       )}
 
       {showSixPack && sixPack && (
-        <SixPackSection sixPack={sixPack} onClose={() => setShowSixPack(false)} />
+        <SixPackSection
+          sixPack={sixPack}
+          onClose={() => setShowSixPack(false)}
+          companyId={companyId}
+          assessmentId={current?.id ?? null}
+        />
       )}
     </div>
   );
 }
 
-function SixPackSection({ sixPack, onClose }: { sixPack: SixPack; onClose: () => void }) {
+function SixPackSection({
+  sixPack,
+  onClose,
+  companyId,
+  assessmentId,
+}: {
+  sixPack: SixPack;
+  onClose: () => void;
+  companyId: string | null;
+  assessmentId: string | null;
+}) {
   const [selected, setSelected] = useState<SixPackItem | null>(null);
+  const hasVazamentos = (sixPack.vazamentos?.length ?? 0) > 0;
+  const hasAlavancas = (sixPack.alavancas?.length ?? 0) > 0;
+  const isEmpty = !hasVazamentos && !hasAlavancas;
 
   return (
     <div style={{ marginTop: '2rem', border: '1px solid #dee2e6', borderRadius: '8px', padding: '1.25rem', background: '#fff' }}>
@@ -189,6 +216,20 @@ function SixPackSection({ sixPack, onClose }: { sixPack: SixPack; onClose: () =>
           Fechar
         </button>
       </div>
+      {isEmpty ? (
+        <div style={{ padding: '2rem', textAlign: 'center', color: '#6c757d', backgroundColor: '#f8f9fa', borderRadius: '8px' }}>
+          <p style={{ marginBottom: '1rem' }}>Não foi possível carregar o diagnóstico completo.</p>
+          {companyId && assessmentId && (
+            <Link
+              href={`/full/resultados?company_id=${companyId}&assessment_id=${assessmentId}`}
+              style={{ ...cta('#6f42c1'), display: 'inline-block' }}
+            >
+              Ver resultados completos
+            </Link>
+          )}
+        </div>
+      ) : (
+        <>
       <div style={{ marginBottom: '1.5rem' }}>
         <h3 style={{ marginBottom: '0.75rem' }}>3 Vazamentos</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem' }}>
@@ -225,6 +266,8 @@ function SixPackSection({ sixPack, onClose }: { sixPack: SixPack; onClose: () =>
           ))}
         </div>
       </div>
+        </>
+      )}
 
       {selected && (
         <div

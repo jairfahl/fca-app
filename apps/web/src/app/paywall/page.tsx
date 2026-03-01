@@ -5,7 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getEntitlement } from '@/lib/entitlement';
+import { getEntitlement, type Entitlement } from '@/lib/entitlement';
 import { assertFullAccess } from '@/lib/fullGuard';
 import { AssinarFullButton } from '@/components/AssinarFullButton';
 
@@ -24,14 +24,14 @@ function PaywallContent() {
   const searchParams = useSearchParams();
   const companyId = searchParams.get('company_id');
   const from = searchParams.get('from');
-  const [entitlement, setEntitlement] = useState<{ plan?: string; status?: string; can_access_full?: boolean; is_admin?: boolean } | null>(null);
+  const [entitlement, setEntitlement] = useState<Entitlement | null>(null);
 
   useEffect(() => {
     if (!companyId || !session?.access_token) return;
     getEntitlement(companyId, session.access_token).then(setEntitlement);
   }, [companyId, session?.access_token]);
 
-  const canAccessFull = assertFullAccess(entitlement, user?.email);
+  const canAccessFull = assertFullAccess(entitlement ?? undefined, user?.email);
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>

@@ -139,6 +139,8 @@ function deriveSuggestionsFromAnswers(answers, scoresByProcess, excludeActionKey
           const ans = (answers || []).find((a) => a.process_key === pk && a.question_key === qk);
           return { question_key: qk, answer: ans?.answer_value, label: sig };
         }),
+      evidence_keys: [...(bestItem.signals || [])].filter((s) => signalsTrue.has(s)),
+      is_gap_content: false,
     };
 
     if (includeMatchDebug) {

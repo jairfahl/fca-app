@@ -11,7 +11,7 @@
     "db:migrate": "node db/run-migrations.js",
     "db:seed": "node db/seed/seed-recommendations.js && node db/seed/seed-full-catalog.js && node db/seed/seed-cause-taxonomy.js && node db/seed/seed-cause-mvp.js",
     "db:seed:f3": "node db/seed/seed-f3-recommendations.js",
-"db:seed:full": "node db/seed/seed-full-catalog.js",
+    "db:seed:full": "node db/seed/seed-full-catalog.js",
     "db:seed:cause": "node db/seed/seed-cause-taxonomy.js",
     "db:seed:cause-mvp": "node db/seed/seed-cause-taxonomy.js && node db/seed/seed-cause-mvp.js",
     "catalog:validate:full": "node db/validate/validate_full_catalog.js",
@@ -19,7 +19,9 @@
     "e2e:activate-full": "node scripts/e2e-activate-full.js",
     "e2e:reports": "node scripts/e2e-reports-versions-roles.js",
     "auth:diagnose": "node scripts/auth-diagnose.mjs",
-    "auth:bootstrap": "node scripts/auth-bootstrap.mjs"
+    "auth:bootstrap": "node scripts/auth-bootstrap.mjs",
+    "test:role-gate": "node scripts/test-role-gate-logic.mjs",
+    "db:seed:consultor": "node db/seed/seed-consultor-test-company.js"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

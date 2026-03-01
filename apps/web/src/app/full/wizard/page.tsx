@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ConsultorBlock from '@/components/ConsultorBlock';
 import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -68,9 +69,11 @@ const PROTECTS_LABELS: Record<string, string> = {
 export default function FullWizardPage() {
   return (
     <ProtectedRoute>
-      <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
-        <FullWizardContent />
-      </Suspense>
+      <ConsultorBlock>
+        <Suspense fallback={<div style={{ padding: '2rem' }}>Carregando...</div>}>
+          <FullWizardContent />
+        </Suspense>
+      </ConsultorBlock>
     </ProtectedRoute>
   );
 }
@@ -92,6 +95,7 @@ function FullWizardContent() {
   const [answersMap, setAnswersMap] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [autoSaving, setAutoSaving] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const processList = useMemo(() => wizard?.processes || [], [wizard]);
@@ -197,11 +201,14 @@ function FullWizardContent() {
     (processKey: string, questionKey: string, value: number) => {
       setAnswersMap((prev) => ({ ...prev, [keyOf(processKey, questionKey)]: value }));
 
+      setAutoSaving(true);
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
       saveTimeoutRef.current = setTimeout(() => {
         saveTimeoutRef.current = null;
-        saveQuestion(processKey, questionKey, value).catch(() => setError('Falha ao salvar resposta'));
-      }, 400);
+        saveQuestion(processKey, questionKey, value)
+          .then(() => setAutoSaving(false))
+          .catch(() => { setAutoSaving(false); setError('Falha ao salvar resposta'); });
+      }, 800);
     },
     [saveQuestion]
   );
@@ -218,6 +225,8 @@ function FullWizardContent() {
         await saveQuestion(processKey, questionKey, val);
       } catch (e) {
         setError('Falha ao salvar resposta');
+      } finally {
+        setAutoSaving(false);
       }
     },
     [answersMap, saveQuestion]
@@ -290,6 +299,9 @@ function FullWizardContent() {
   };
 
   const allComplete = processList.length > 0 && processList.every((p) => (answeredCountByProcess[p.process_key] || 0) >= p.questions.length);
+
+  const totalQuestions = useMemo(() => processList.reduce((sum, p) => sum + p.questions.length, 0), [processList]);
+  const answeredCount = useMemo(() => Object.values(answeredCountByProcess).reduce((sum, n) => sum + n, 0), [answeredCountByProcess]);
 
   const handleSubmit = async () => {
     if (!assessment?.id || !companyId || !session?.access_token || !allComplete) return;
@@ -392,6 +404,18 @@ function FullWizardContent() {
         </div>
       )}
 
+      {totalQuestions > 0 && (
+        <div style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.875rem', color: '#495057' }}>
+            <span>{autoSaving ? 'Salvando...' : 'Progresso do diagnóstico'}</span>
+            <span>{answeredCount} de {totalQuestions} questões respondidas</span>
+          </div>
+          <div style={{ height: '8px', background: '#e9ecef', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${(answeredCount / totalQuestions) * 100}%`, background: answeredCount === totalQuestions ? '#198754' : '#0d6efd', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '1rem' }}>
         <div style={{ border: '1px solid #dee2e6', borderRadius: '8px', padding: '0.75rem', background: '#fff' }}>
           <h3 style={{ marginTop: 0 }}>Áreas e processos</h3>
@@ -470,16 +494,21 @@ function FullWizardContent() {
                 <button onClick={saveAndContinue} disabled={saving || submitting || assessment?.status === 'CLOSED'} style={btn('#0d6efd')}>
                   Salvar e continuar
                 </button>
-                {allComplete && (assessment?.status === 'CLOSED' || assessment?.status === 'SUBMITTED') ? (
+                {(assessment?.status === 'CLOSED' || assessment?.status === 'SUBMITTED') ? (
                   <Link
                     href={companyId && assessment?.id ? `/full/dashboard?company_id=${companyId}&assessment_id=${assessment.id}` : (companyId ? `/full?company_id=${companyId}` : '/full')}
                     style={linkBtn('#198754')}
                   >
                     {assessment?.status === 'CLOSED' ? 'Ver resultados' : 'Ir ao dashboard'}
                   </Link>
-                ) : allComplete && (
-                  <button onClick={handleSubmit} disabled={saving || submitting} style={btn('#198754')}>
-                    {submitting ? 'Enviando...' : 'Submeter diagnóstico'}
+                ) : (
+                  <button
+                    onClick={handleSubmit}
+                    disabled={saving || submitting || answeredCount < totalQuestions}
+                    data-testid="btn-concluir-diagnostico"
+                    style={btn(answeredCount < totalQuestions ? '#adb5bd' : '#198754')}
+                  >
+                    {submitting ? 'Finalizando...' : 'Finalizar diagnóstico'}
                   </button>
                 )}
               </div>

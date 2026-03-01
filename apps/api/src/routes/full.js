@@ -7,8 +7,10 @@ const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireFullEntitlement } = require('../middleware/requireFullEntitlement');
+const { blockConsultorOnMutation } = require('../middleware/requireRole');
 const { ensureCompanyAccess, ensureConsultantOrOwnerAccess } = require('../lib/companyAccess');
-const { getOrCreateCurrentFullAssessment, companySegmentToFull, FullCurrentError, logFullCurrentError } = require('../lib/fullAssessment');
+const { logEvent } = require('../lib/auditLog');
+const { getOrCreateCurrentFullAssessment, createNewFullVersion, companySegmentToFull, FullCurrentError, logFullCurrentError } = require('../lib/fullAssessment');
 const {
   getOQueEstaAcontecendo,
   getCustoDeNaoAgir,
@@ -28,6 +30,11 @@ function scoreToBand(score) {
   if (score < 4) return 'LOW';
   if (score < 7) return 'MEDIUM';
   return 'HIGH';
+}
+
+/** Converte score interno (0–10) para escala externa (0–100). */
+function toExternalScore(s) {
+  return Math.round((s ?? 0) * 10);
 }
 
 async function getAssessment(assessmentId, companyId) {
@@ -218,6 +225,8 @@ async function buildSuggestionsForAssessment(assessmentId, excludeActionKeys, in
             mudanca_em_30_dias: causeDef?.mecanismo_primario ? `Em 30 dias: ${causeDef.mecanismo_primario}` : null,
             primeiro_passo: firstAction ? { action_key: firstAction.action_key, action_title: firstAction.titulo_cliente || firstAction.action_key } : null,
             why: evidence.map((e) => ({ question_key: e.q_id, answer: e.answer, label: e.texto_cliente })),
+            evidence_keys: evidence.map((e) => `${e.process_key || gapDef.processo}_${e.q_id || e.question_key || ''}`).filter(Boolean),
+            is_gap_content: false,
             steps_3: [],
             dod_checklist: [],
             owner_suggestions: [],
@@ -584,7 +593,7 @@ async function _buildAndPersistFindingsInner({ assessmentId, companyId, segment,
 // ---------------------------------------------------------------------------
 // 1) POST /full/assessments/start — criar/obter assessment (idempotente)
 // ---------------------------------------------------------------------------
-router.post('/full/assessments/start', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/start', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const { company_id, segment } = req.body;
@@ -663,7 +672,7 @@ router.post('/full/assessments/start', requireAuth, requireFullEntitlement, asyn
 });
 
 // GET /full/assessments/current?company_id= — retorna assessment FULL ativo (cria DRAFT se não existir)
-router.get('/full/assessments/current', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/current', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   const userId = req.user.id;
   const userEmail = req.user.email || null;
   const companyId = req.query.company_id;
@@ -671,7 +680,7 @@ router.get('/full/assessments/current', requireAuth, requireFullEntitlement, asy
   try {
     if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada. Acesse a partir do menu ou link correto.');
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
 
     const forWizard = req.query.for_wizard === '1' || req.query.for_wizard === 'true';
@@ -708,9 +717,567 @@ router.get('/full/assessments/current', requireAuth, requireFullEntitlement, asy
 });
 
 // ---------------------------------------------------------------------------
+// FULL Versionamento e Relatórios
+// ---------------------------------------------------------------------------
+
+// GET /full/versions?company_id= — lista versões ordenadas desc
+router.get('/full/versions', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id;
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessments, error } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id, full_version, status, created_at, closed_at')
+      .eq('company_id', companyId)
+      .order('full_version', { ascending: false });
+
+    if (error) {
+      console.error('Erro GET /full/versions:', error.message);
+      return apiError(res, 500, 'VERSIONS_LOAD_ERROR', 'Erro ao carregar versões.');
+    }
+
+    const ids = (assessments || []).map((a) => a.id);
+    const { data: answerCounts } = await supabase
+      .schema('public')
+      .from('full_answers')
+      .select('assessment_id')
+      .in('assessment_id', ids);
+    const countByAssessment = {};
+    (answerCounts || []).forEach((r) => {
+      countByAssessment[r.assessment_id] = (countByAssessment[r.assessment_id] || 0) + 1;
+    });
+
+    const currentDraftOrSubmitted = (assessments || []).find((a) => a.status === 'DRAFT' || a.status === 'SUBMITTED');
+    const list = (assessments || []).map((a) => ({
+      full_version: a.full_version,
+      assessment_id: a.id,
+      status: a.status,
+      created_at: a.created_at,
+      closed_at: a.closed_at,
+      answered_count: countByAssessment[a.id] || 0,
+      is_current: !!(currentDraftOrSubmitted && currentDraftOrSubmitted.id === a.id),
+    }));
+
+    return res.json(list);
+  } catch (err) {
+    console.error('Erro GET /full/versions:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// POST /full/versions/new?company_id= — refazer diagnóstico (novo DRAFT)
+router.post('/full/versions/new', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id || req.body.company_id;
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: lastSubmitted } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id, status')
+      .eq('company_id', companyId)
+      .eq('status', 'SUBMITTED')
+      .maybeSingle();
+    if (lastSubmitted && lastSubmitted.status === 'SUBMITTED') {
+      const { data: plan } = await supabase
+        .schema('public')
+        .from('full_selected_actions')
+        .select('action_key')
+        .eq('assessment_id', lastSubmitted.id)
+        .limit(1);
+      if (plan && plan.length > 0) {
+        return apiError(res, 400, 'DIAG_IN_PROGRESS', 'Conclua ou feche o ciclo atual antes de refazer o diagnóstico.');
+      }
+    }
+
+    const result = await createNewFullVersion(companyId, userId);
+    const { assessment } = result;
+    return res.status(200).json({
+      full_version: assessment.full_version,
+      assessment_id: assessment.id,
+      is_new: result.isNew,
+    });
+  } catch (err) {
+    if (err instanceof FullCurrentError) {
+      logFullCurrentError(err.phase, req.query.company_id, req.user.id, req.user?.email, err.originalError);
+      return apiError(res, 500, 'VERSION_CREATE_FAILED', 'Não foi possível criar nova versão. Tente novamente.');
+    }
+    console.error('Erro POST /full/versions/new:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// GET /full/versions/:full_version/summary?company_id= — snapshot do diagnóstico
+router.get('/full/versions/:full_version/summary', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id;
+    const fullVersion = parseInt(req.params.full_version, 10);
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+    if (isNaN(fullVersion) || fullVersion < 1) return apiError(res, 400, 'INVALID_VERSION', 'Versão inválida.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessment } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('full_version', fullVersion)
+      .maybeSingle();
+    if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado para esta versão.');
+
+    const { data: snapshot, error } = await supabase
+      .schema('public')
+      .from('full_diagnostic_snapshot')
+      .select('*')
+      .eq('full_assessment_id', assessment.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Erro GET /full/versions/summary:', error.message);
+      return apiError(res, 500, 'SNAPSHOT_LOAD_ERROR', 'Erro ao carregar resumo.');
+    }
+    if (!snapshot) return apiError(res, 404, 'SNAPSHOT_NOT_FOUND', 'Resumo ainda não disponível para esta versão.');
+
+    return res.json({
+      full_version: snapshot.full_version,
+      assessment_id: snapshot.full_assessment_id,
+      segment: snapshot.segment,
+      processes: (snapshot.processes || []).map((p) => ({ ...p, score_numeric: toExternalScore(p.score_numeric) })),
+      raios_x: snapshot.raios_x || { vazamentos: [], alavancas: [] },
+      recommendations: snapshot.recommendations || [],
+      plan: snapshot.plan || [],
+      evidence_summary: snapshot.evidence_summary || [],
+      created_at: snapshot.created_at,
+      updated_at: snapshot.updated_at,
+    });
+  } catch (err) {
+    console.error('Erro GET /full/versions/summary:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// GET /full/compare?company_id=...&from=1&to=2
+router.get('/full/compare', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id;
+    const fromVer = parseInt(req.query.from, 10);
+    const toVer = parseInt(req.query.to, 10);
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+    if (isNaN(fromVer) || isNaN(toVer) || fromVer < 1 || toVer < 1) {
+      return apiError(res, 400, 'INVALID_PARAMS', 'Parâmetros from e to devem ser versões válidas (1, 2, ...).');
+    }
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessments } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id, full_version')
+      .eq('company_id', companyId)
+      .in('full_version', [fromVer, toVer]);
+    const byVer = {};
+    (assessments || []).forEach((a) => { byVer[a.full_version] = a; });
+    if (!byVer[fromVer] || !byVer[toVer]) {
+      return apiError(res, 404, 'DIAG_NOT_FOUND', 'Uma ou ambas as versões não foram encontradas.');
+    }
+
+    const { data: snapshots } = await supabase
+      .schema('public')
+      .from('full_diagnostic_snapshot')
+      .select('*')
+      .in('full_assessment_id', [byVer[fromVer].id, byVer[toVer].id]);
+    const snapByAssessment = {};
+    (snapshots || []).forEach((s) => { snapByAssessment[s.full_assessment_id] = s; });
+    const snapFrom = snapByAssessment[byVer[fromVer].id];
+    const snapTo = snapByAssessment[byVer[toVer].id];
+
+    const processesFrom = (snapFrom?.processes || []).reduce((acc, p) => { acc[p.process_key] = p; return acc; }, {});
+    const processesTo = (snapTo?.processes || []).reduce((acc, p) => { acc[p.process_key] = p; return acc; }, {});
+    const allProcessKeys = [...new Set([...Object.keys(processesFrom), ...Object.keys(processesTo)])];
+    const evolution_by_process = allProcessKeys.map((pk) => {
+      const from = processesFrom[pk];
+      const to = processesTo[pk];
+      return {
+        process_key: pk,
+        from: from ? { band: from.band, score_numeric: toExternalScore(from.score_numeric) } : null,
+        to: to ? { band: to.band, score_numeric: toExternalScore(to.score_numeric) } : null,
+      };
+    });
+
+    const raiosFrom = snapFrom?.raios_x || { vazamentos: [], alavancas: [] };
+    const raiosTo = snapTo?.raios_x || { vazamentos: [], alavancas: [] };
+    const titlesFrom = new Set([
+      ...(raiosFrom.vazamentos || []).map((v) => v.title),
+      ...(raiosFrom.alavancas || []).map((a) => a.title),
+    ]);
+    const titlesTo = new Set([
+      ...(raiosTo.vazamentos || []).map((v) => v.title),
+      ...(raiosTo.alavancas || []).map((a) => a.title),
+    ]);
+    const raio_x_entered = [...titlesTo].filter((t) => !titlesFrom.has(t));
+    const raio_x_left = [...titlesFrom].filter((t) => !titlesTo.has(t));
+
+    const planFrom = snapFrom?.plan || [];
+    const evidenceFrom = snapFrom?.evidence_summary || [];
+    const gainsFrom = evidenceFrom.filter((e) => e.declared_gain).map((e) => ({
+      action_key: e.action_key,
+      title: e.title,
+      declared_gain: e.declared_gain,
+    }));
+
+    return res.json({
+      from_version: fromVer,
+      to_version: toVer,
+      evolution_by_process,
+      raio_x_entered,
+      raio_x_left,
+      actions_completed_previous: planFrom.filter((p) => p.status === 'DONE').length,
+      gains_declared_previous: gainsFrom,
+    });
+  } catch (err) {
+    console.error('Erro GET /full/compare:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// POST /full/reports/generate?company_id=...&full_version=...
+router.post('/full/reports/generate', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id || req.body.company_id;
+    const fullVersion = parseInt(req.query.full_version || req.body.full_version, 10);
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+    if (isNaN(fullVersion) || fullVersion < 1) return apiError(res, 400, 'INVALID_VERSION', 'Versão inválida.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessment } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id, status')
+      .eq('company_id', companyId)
+      .eq('full_version', fullVersion)
+      .maybeSingle();
+    if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado para esta versão.');
+    if (assessment.status !== 'SUBMITTED' && assessment.status !== 'CLOSED') {
+      return apiError(res, 400, 'DIAG_NOT_READY', 'Conclua o diagnóstico para gerar relatório.');
+    }
+
+    const { data: company } = await supabase
+      .schema('public')
+      .from('companies')
+      .select('name')
+      .eq('id', companyId)
+      .maybeSingle();
+
+    const { data: snapshot } = await supabase
+      .schema('public')
+      .from('full_diagnostic_snapshot')
+      .select('*')
+      .eq('full_assessment_id', assessment.id)
+      .maybeSingle();
+    if (!snapshot) {
+      return apiError(res, 400, 'SNAPSHOT_MISSING', 'Conclua o diagnóstico para gerar relatório.');
+    }
+
+    let comparison = null;
+    if (fullVersion > 1) {
+      const { data: prevAssessment } = await supabase
+        .schema('public')
+        .from('full_assessments')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('full_version', fullVersion - 1)
+        .maybeSingle();
+      if (prevAssessment) {
+        const { data: snapPrev } = await supabase
+          .schema('public')
+          .from('full_diagnostic_snapshot')
+          .select('processes, raios_x, plan, evidence_summary')
+          .eq('full_assessment_id', prevAssessment.id)
+          .maybeSingle();
+        const processesFrom = (snapPrev?.processes || []).reduce((acc, p) => { acc[p.process_key] = p; return acc; }, {});
+        const processesTo = (snapshot?.processes || []).reduce((acc, p) => { acc[p.process_key] = p; return acc; }, {});
+        const allKeys = [...new Set([...Object.keys(processesFrom), ...Object.keys(processesTo)])];
+        const raiosFrom = snapPrev?.raios_x || { vazamentos: [], alavancas: [] };
+        const raiosTo = snapshot?.raios_x || { vazamentos: [], alavancas: [] };
+        const titlesFrom = new Set([
+          ...(raiosFrom.vazamentos || []).map((v) => v.title),
+          ...(raiosFrom.alavancas || []).map((a) => a.title),
+        ]);
+        const titlesTo = new Set([
+          ...(raiosTo.vazamentos || []).map((v) => v.title),
+          ...(raiosTo.alavancas || []).map((a) => a.title),
+        ]);
+        comparison = {
+          evolution_by_process: allKeys.map((pk) => ({
+            process_key: pk,
+            from: processesFrom[pk] ? { band: processesFrom[pk].band, score_numeric: toExternalScore(processesFrom[pk].score_numeric) } : null,
+            to: processesTo[pk] ? { band: processesTo[pk].band, score_numeric: toExternalScore(processesTo[pk].score_numeric) } : null,
+          })),
+          raio_x_entered: [...titlesTo].filter((t) => !titlesFrom.has(t)),
+          raio_x_left: [...titlesFrom].filter((t) => !titlesTo.has(t)),
+          gains_declared_previous: (snapPrev?.evidence_summary || []).filter((e) => e.declared_gain).map((e) => ({
+            action_key: e.action_key,
+            title: e.title,
+            declared_gain: e.declared_gain,
+          })),
+        };
+      }
+    }
+
+    const { generateFullPdf } = require('../lib/reports/fullPdf');
+    const now = new Date().toISOString();
+    const { buffer, meta } = await generateFullPdf(snapshot, {
+      companyName: company?.name || 'Empresa',
+      fullVersion,
+      generatedAt: now,
+      comparison,
+    });
+
+    const reportsDir = path.join(process.cwd(), 'data', 'reports', companyId);
+    if (!fs.existsSync(reportsDir)) {
+      fs.mkdirSync(reportsDir, { recursive: true });
+    }
+    const filePath = path.join(reportsDir, `${assessment.id}.pdf`);
+    fs.writeFileSync(filePath, buffer);
+
+    const dbFilePath = `${companyId}/${assessment.id}.pdf`;
+    const { data: existingReport } = await supabase
+      .schema('public')
+      .from('full_reports')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('full_assessment_id', assessment.id)
+      .maybeSingle();
+
+    if (existingReport) {
+      await supabase
+        .schema('public')
+        .from('full_reports')
+        .update({
+          status: 'READY',
+          generated_at: now,
+          file_path: dbFilePath,
+          checksum: meta.checksum,
+          meta: { pages: meta.pages, locale: 'pt-BR', template_version: meta.template_version },
+          error: null,
+          updated_at: now,
+        })
+        .eq('id', existingReport.id);
+    } else {
+      await supabase
+        .schema('public')
+        .from('full_reports')
+        .insert({
+          company_id: companyId,
+          full_assessment_id: assessment.id,
+          full_version: fullVersion,
+          status: 'READY',
+          generated_at: now,
+          file_path: dbFilePath,
+          checksum: meta.checksum,
+          meta: { pages: meta.pages, locale: 'pt-BR', template_version: meta.template_version },
+          error: null,
+          updated_at: now,
+        });
+    }
+
+    const { data: report } = await supabase
+      .schema('public')
+      .from('full_reports')
+      .select('id, status, generated_at')
+      .eq('company_id', companyId)
+      .eq('full_assessment_id', assessment.id)
+      .single();
+
+    return res.status(200).json({
+      report_id: report.id,
+      status: report.status,
+      generated_at: report.generated_at,
+    });
+  } catch (err) {
+    console.error('Erro POST /full/reports/generate:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// GET /full/reports/status?company_id=...&full_version=...
+router.get('/full/reports/status', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id;
+    const fullVersion = parseInt(req.query.full_version, 10);
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+    if (isNaN(fullVersion) || fullVersion < 1) return apiError(res, 400, 'INVALID_VERSION', 'Versão inválida.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessment } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('full_version', fullVersion)
+      .maybeSingle();
+    if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
+
+    const { data: report } = await supabase
+      .schema('public')
+      .from('full_reports')
+      .select('status, generated_at, file_path, error')
+      .eq('company_id', companyId)
+      .eq('full_assessment_id', assessment.id)
+      .maybeSingle();
+
+    if (!report) {
+      return res.json({ status: null, generated_at: null, download_url: null, message: 'Relatório ainda não solicitado.' });
+    }
+    const downloadUrl = report.status === 'READY' && report.file_path
+      ? `/full/reports/download?company_id=${companyId}&full_version=${fullVersion}`
+      : null;
+    return res.json({
+      status: report.status,
+      generated_at: report.generated_at,
+      download_url: downloadUrl,
+      error: report.error,
+    });
+  } catch (err) {
+    console.error('Erro GET /full/reports/status:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// GET /full/reports/download?company_id=...&full_version=...
+router.get('/full/reports/download', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
+  const path = require('path');
+  const fs = require('fs');
+  try {
+    const userId = req.user.id;
+    const companyId = req.query.company_id;
+    const fullVersion = parseInt(req.query.full_version, 10);
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+    if (isNaN(fullVersion) || fullVersion < 1) return apiError(res, 400, 'INVALID_VERSION', 'Versão inválida.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
+
+    const { data: assessment } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('full_version', fullVersion)
+      .maybeSingle();
+    if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
+
+    const { data: report } = await supabase
+      .schema('public')
+      .from('full_reports')
+      .select('status, file_path, error')
+      .eq('company_id', companyId)
+      .eq('full_assessment_id', assessment.id)
+      .maybeSingle();
+
+    if (!report) return apiError(res, 404, 'REPORT_NOT_FOUND', 'Relatório não encontrado.');
+    if (report.status === 'PENDING') {
+      return res.status(202).json({ message: 'Relatório em geração. Tente novamente em instantes.' });
+    }
+    if (report.status === 'FAILED') {
+      return apiError(res, 500, 'REPORT_FAILED', report.error || 'Falha ao gerar relatório.');
+    }
+    if (report.status !== 'READY' || !report.file_path) {
+      return apiError(res, 404, 'REPORT_NOT_READY', 'Relatório ainda não disponível.');
+    }
+
+    const fullPath = path.join(process.cwd(), 'data', 'reports', report.file_path);
+    if (!fs.existsSync(fullPath)) {
+      console.error('PDF não encontrado em disco:', fullPath);
+      return apiError(res, 500, 'REPORT_FILE_MISSING', 'Arquivo do relatório não encontrado. Gere novamente.');
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="diagnostico-full-v${fullVersion}.pdf"`);
+    const stream = fs.createReadStream(fullPath);
+    stream.pipe(res);
+  } catch (err) {
+    console.error('Erro GET /full/reports/download:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
+  }
+});
+
+// GET /full/reports/:assessmentId.pdf — relatório síncrono, sem job em background.
+// Auth: requireAuth apenas. Guard via ensureConsultantOrOwnerAccess (USER/CONSULTOR/ADMIN).
+router.get('/full/reports/:assessmentId.pdf', requireAuth, async (req, res) => {
+  const { generateFullReportPdf } = require('../lib/fullReportPdf');
+  try {
+    const userId = req.user.id;
+    const assessmentId = req.params.assessmentId;
+    const companyId = req.query.company_id;
+
+    if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada.');
+
+    const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
+    if (!access) return apiError(res, 403, 'FORBIDDEN', 'Sem acesso a este diagnóstico.');
+
+    const assessment = await getAssessment(assessmentId, companyId);
+    if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
+    if (assessment.status === 'DRAFT') {
+      return apiError(res, 400, 'DIAG_NOT_READY', 'Diagnóstico ainda em rascunho. Finalize antes de gerar o relatório.');
+    }
+
+    const [scoresRes, findingsRes, planRes, evidenceRes, companyRes] = await Promise.all([
+      supabase.schema('public').from('full_process_scores').select('*').eq('assessment_id', assessmentId).order('process_key'),
+      supabase.schema('public').from('full_findings').select('*').eq('assessment_id', assessmentId).order('finding_type').order('position'),
+      supabase.schema('public').from('full_selected_actions').select('*').eq('assessment_id', assessmentId).order('position'),
+      supabase.schema('public').from('full_action_evidence').select('*').eq('assessment_id', assessmentId),
+      supabase.schema('public').from('companies').select('name').eq('id', companyId).maybeSingle(),
+    ]);
+
+    const scores = (scoresRes.data || []).map((s) => ({ ...s, score_numeric: toExternalScore(s.score_numeric) }));
+    const findings = findingsRes.data || [];
+    const plan = planRes.data || [];
+    const evidenceMap = {};
+    (evidenceRes.data || []).forEach((e) => { evidenceMap[e.action_key] = e; });
+    const actions = plan.map((p) => ({ ...p, ...(evidenceMap[p.action_key] || {}) }));
+    const enrichedAssessment = { ...assessment, company_name: companyRes.data?.name || 'Empresa' };
+
+    const buffer = await generateFullReportPdf(enrichedAssessment, scores, findings, actions);
+
+    logEvent(supabase, { event: 'report_generated', userId, companyId, assessmentId });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="diagnostico-full-${assessmentId}.pdf"`);
+    return res.send(buffer);
+  } catch (err) {
+    console.error('Erro GET /full/reports/:assessmentId.pdf:', err.message);
+    return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado ao gerar relatório.');
+  }
+});
+
+// ---------------------------------------------------------------------------
 // 2) GET /full/assessments/:id
 // ---------------------------------------------------------------------------
-router.get('/full/assessments/:id', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -738,7 +1305,7 @@ router.get('/full/assessments/:id', requireAuth, requireFullEntitlement, async (
 });
 
 // GET /full/assessments/:id/status?company_id= — status do diagnóstico (fonte de verdade para UI)
-router.get('/full/assessments/:id/status', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/status', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const companyId = req.query.company_id;
@@ -907,14 +1474,14 @@ async function getCatalogAvailableSegments() {
 // ---------------------------------------------------------------------------
 // 3) GET /full/catalog?company_id=... (ou ?segment=C|I|S)
 // ---------------------------------------------------------------------------
-router.get('/full/catalog', requireAuth, async (req, res) => {
+router.get('/full/catalog', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id;
     const assessmentId = req.query.assessment_id;
 
     if (companyId) {
-      const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+      const access = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
       if (!access) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
     }
 
@@ -978,7 +1545,7 @@ router.get('/full/catalog', requireAuth, async (req, res) => {
 });
 
 // GET /full/catalog/process/:process_key?company_id=... (opcional)
-router.get('/full/catalog/process/:process_key', requireAuth, async (req, res) => {
+router.get('/full/catalog/process/:process_key', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const segment = await resolveCatalogSegmentForRequest(req);
     if (!segment) return res.status(400).json({ error: 'segment inválido' });
@@ -1050,7 +1617,7 @@ async function handleAnswersUpsert(req, res) {
       return res.status(400).json({ error: 'process_key e answers (array) ou answers com question_id são obrigatórios; answer_value 0-10' });
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) {
       return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
     }
@@ -1087,8 +1654,8 @@ async function handleAnswersUpsert(req, res) {
   }
 }
 
-router.put('/full/assessments/:id/answers', requireAuth, requireFullEntitlement, handleAnswersUpsert);
-router.post('/full/assessments/:id/answers', requireAuth, requireFullEntitlement, handleAnswersUpsert);
+router.put('/full/assessments/:id/answers', requireAuth, blockConsultorOnMutation, requireFullEntitlement, handleAnswersUpsert);
+router.post('/full/assessments/:id/answers', requireAuth, blockConsultorOnMutation, requireFullEntitlement, handleAnswersUpsert);
 
 // ---------------------------------------------------------------------------
 // 5) GET /full/assessments/:id/answers?process_key=  e  GET /full/answers?assessment_id=&company_id=
@@ -1104,7 +1671,7 @@ async function handleGetAnswers(req, res) {
       return apiError(res, 400, 'PARAMS_REQUIRED', 'assessment_id e company_id são obrigatórios.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) {
       return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
     }
@@ -1141,12 +1708,12 @@ async function handleGetAnswers(req, res) {
   }
 }
 
-router.get('/full/answers', requireAuth, requireFullEntitlement, (req, res) => {
+router.get('/full/answers', requireAuth, blockConsultorOnMutation, requireFullEntitlement, (req, res) => {
   req.params = { ...req.params, id: req.query.assessment_id };
   return handleGetAnswers(req, res);
 });
 
-router.get('/full/assessments/:id/answers', requireAuth, requireFullEntitlement, handleGetAnswers);
+router.get('/full/assessments/:id/answers', requireAuth, blockConsultorOnMutation, requireFullEntitlement, handleGetAnswers);
 
 // ---------------------------------------------------------------------------
 // Motor de Causa: respostas e avaliação por gap
@@ -1165,7 +1732,7 @@ const PROCESS_BAND_TO_GAP = {
 };
 
 // GET /full/status?company_id=&assessment_id=
-router.get('/full/status', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/status', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const assessmentId = req.query.assessment_id;
     const companyId = req.query.company_id;
@@ -1203,7 +1770,7 @@ router.get('/full/status', requireAuth, requireFullEntitlement, async (req, res)
 });
 
 // GET /full/cause/catalog — catálogo de gaps e perguntas (para frontend)
-router.get('/full/cause/catalog', requireAuth, async (req, res) => {
+router.get('/full/cause/catalog', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const catalog = loadCauseCatalog();
     return res.json({
@@ -1218,7 +1785,7 @@ router.get('/full/cause/catalog', requireAuth, async (req, res) => {
 });
 
 // GET /full/cause/answers?company_id=&assessment_id=&gap_id= — respostas já salvas
-router.get('/full/cause/answers', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/cause/answers', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const companyId = req.query.company_id;
     const assessmentId = req.query.assessment_id;
@@ -1226,7 +1793,7 @@ router.get('/full/cause/answers', requireAuth, requireFullEntitlement, async (re
     if (!companyId || !assessmentId || !gapId) {
       return apiError(res, 400, 'PARAMS_REQUIRED', 'company_id, assessment_id e gap_id são obrigatórios.');
     }
-    const company = await ensureConsultantOrOwnerAccess(req.user.id, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(req.user.id, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1239,7 +1806,7 @@ router.get('/full/cause/answers', requireAuth, requireFullEntitlement, async (re
 });
 
 // GET /full/cause/result?company_id=&assessment_id=&gap_id= — causa já avaliada
-router.get('/full/cause/result', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/cause/result', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const companyId = req.query.company_id;
     const assessmentId = req.query.assessment_id;
@@ -1247,7 +1814,7 @@ router.get('/full/cause/result', requireAuth, requireFullEntitlement, async (req
     if (!companyId || !assessmentId || !gapId) {
       return apiError(res, 400, 'PARAMS_REQUIRED', 'company_id, assessment_id e gap_id são obrigatórios.');
     }
-    const company = await ensureConsultantOrOwnerAccess(req.user.id, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(req.user.id, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const cause = await getGapCause(assessmentId, gapId);
     return res.json(cause || null);
@@ -1258,7 +1825,7 @@ router.get('/full/cause/result', requireAuth, requireFullEntitlement, async (req
 });
 
 // POST /full/cause/answer?company_id=&assessment_id=&gap_id=
-router.post('/full/cause/answer', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/cause/answer', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id || req.body.company_id;
@@ -1276,7 +1843,7 @@ router.post('/full/cause/answer', requireAuth, requireFullEntitlement, async (re
       return apiError(res, 400, 'INVALID_ANSWER', `answer deve ser um de: ${LIKERT_5_VALUES.join(', ')}`);
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1309,7 +1876,7 @@ router.post('/full/cause/answer', requireAuth, requireFullEntitlement, async (re
 });
 
 // POST /full/cause/evaluate?company_id=&assessment_id=&gap_id=
-router.post('/full/cause/evaluate', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/cause/evaluate', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id || req.body.company_id;
@@ -1320,7 +1887,7 @@ router.post('/full/cause/evaluate', requireAuth, requireFullEntitlement, async (
       return apiError(res, 400, 'PARAMS_REQUIRED', 'company_id, assessment_id e gap_id são obrigatórios.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1348,6 +1915,10 @@ router.post('/full/cause/evaluate', requireAuth, requireFullEntitlement, async (
       version: catalog.version || '1.0.0',
     });
 
+    if (result.primary && result.primary !== 'UNKNOWN') {
+      logEvent(supabase, { event: 'cause_classified', userId, companyId, assessmentId, meta: { gap_id: gapId, cause_primary: result.primary } });
+    }
+
     return res.json({
       gap_id: gapId,
       cause_primary: result.primary,
@@ -1366,7 +1937,7 @@ router.post('/full/cause/evaluate', requireAuth, requireFullEntitlement, async (
 // ---------------------------------------------------------------------------
 
 // GET /full/causes/pending?assessment_id=&company_id= — gaps pendentes e perguntas
-router.get('/full/causes/pending', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/causes/pending', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.query.assessment_id;
@@ -1375,7 +1946,7 @@ router.get('/full/causes/pending', requireAuth, requireFullEntitlement, async (r
       return apiError(res, 400, 'PARAMS_REQUIRED', 'assessment_id e company_id são obrigatórios.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1420,7 +1991,7 @@ router.get('/full/causes/pending', requireAuth, requireFullEntitlement, async (r
 
 // POST /full/causes/answer — respostas + classificação determinística + persist
 // Body: { gap_id, answers: [{ q_id, answer }] }
-router.post('/full/causes/answer', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/causes/answer', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id || req.body.company_id;
@@ -1434,7 +2005,7 @@ router.post('/full/causes/answer', requireAuth, requireFullEntitlement, async (r
       return apiError(res, 400, 'BODY_REQUIRED', 'answers (array de {q_id, answer}) é obrigatório.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1490,6 +2061,7 @@ router.post('/full/causes/answer', requireAuth, requireFullEntitlement, async (r
 
     if (result.primary && result.primary !== 'UNKNOWN') {
       emitValueEvent('CAUSE_CLASSIFIED', { assessment_id: assessmentId, company_id: companyId, meta: { gap_id: gapId, cause_primary: result.primary } });
+      logEvent(supabase, { event: 'cause_classified', userId, companyId, assessmentId, meta: { gap_id: gapId, cause_primary: result.primary } });
     }
 
     const { error: updErr } = await supabase
@@ -1522,7 +2094,7 @@ router.post('/full/causes/answer', requireAuth, requireFullEntitlement, async (r
 });
 
 // GET /full/causes?assessment_id=&company_id= — classificações concluídas com rastreabilidade
-router.get('/full/causes', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/causes', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.query.assessment_id;
@@ -1531,7 +2103,7 @@ router.get('/full/causes', requireAuth, requireFullEntitlement, async (req, res)
       return apiError(res, 400, 'PARAMS_REQUIRED', 'assessment_id e company_id são obrigatórios.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada.');
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
@@ -1572,7 +2144,7 @@ function makeDebugId() {
   return `sub_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-router.post('/full/assessments/:id/submit', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/submit', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   const debugId = makeDebugId();
   try {
     const userId = req.user.id;
@@ -1583,7 +2155,7 @@ router.post('/full/assessments/:id/submit', requireAuth, requireFullEntitlement,
       return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada. Acesse a partir do menu ou link correto.');
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) {
       return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
     }
@@ -1793,11 +2365,24 @@ router.post('/full/assessments/:id/submit', requireAuth, requireFullEntitlement,
       process_keys: scoresToInsert.map((s) => s.process_key),
     });
 
+    // Calcular próxima assessment_version: MAX entre SUBMITTED/CLOSED da empresa + 1
+    const { data: maxVerRow } = await supabase
+      .schema('public')
+      .from('full_assessments')
+      .select('assessment_version')
+      .eq('company_id', companyId)
+      .in('status', ['SUBMITTED', 'CLOSED'])
+      .order('assessment_version', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const newAssessmentVersion = (maxVerRow?.assessment_version ?? 0) + 1;
+
     const { error: updErr } = await supabase
       .schema('public')
       .from('full_assessments')
       .update({
         status: 'SUBMITTED',
+        assessment_version: newAssessmentVersion,
         submitted_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -1930,12 +2515,15 @@ router.post('/full/assessments/:id/submit', requireAuth, requireFullEntitlement,
       console.warn('[AUDIT] full_submit findings_gap assessment_id=' + assessmentId);
     }
 
+    const { persistSnapshotOnSubmit } = require('../lib/fullSnapshot');
+    await persistSnapshotOnSubmit(assessmentId, companyId, segment, scoresToInsert, findingsResult.findings, getAssessmentById);
+
     console.log('[AUDIT] full_submit assessment_id=' + assessmentId + ' status=SUBMITTED');
 
     return res.status(200).json({
       ok: true,
       status: 'SUBMITTED',
-      scores: scoresToInsert,
+      scores: scoresToInsert.map((s) => ({ ...s, score_numeric: toExternalScore(s.score_numeric) })),
       findings_count: findingsResult.findings.length
     });
   } catch (err) {
@@ -1990,6 +2578,7 @@ async function loadFullResultsPayload(assessmentId) {
     const processLabel = PROCESS_OWNER_LABEL[f.processo] || f.processo;
     const title = f.gap_label ? f.gap_label : `${processLabel} (${f.maturity_band})`;
     const questionRefs = f.trace?.question_refs || [];
+    const isGap = !!f.is_fallback;
     return {
       title,
       o_que_acontece: f.gap_label || f.o_que_esta_acontecendo,
@@ -1998,7 +2587,9 @@ async function loadFullResultsPayload(assessmentId) {
       muda_em_30_dias: f.o_que_muda_em_30_dias,
       primeiro_passo_action_id: f.primeiro_passo?.action_key || null,
       primeiro_passo: f.primeiro_passo?.action_title || null,
-      is_fallback: !!f.is_fallback,
+      is_fallback: isGap,
+      is_gap_content: isGap,
+      evidence_keys: (questionRefs || []).map((q) => `${q.process_key}_${q.question_key}`),
       supporting: {
         processes: f.trace?.process_keys || [f.processo],
         como_puxou_nivel: f.trace?.como_puxou_nivel || null,
@@ -2023,7 +2614,7 @@ async function loadFullResultsPayload(assessmentId) {
     payload: {
       six_pack,
       findings,
-      scores_by_process: scores,
+      scores_by_process: (scores || []).map((s) => ({ ...s, score_numeric: toExternalScore(s.score_numeric) })),
       trace,
       items: findings.map((f) => ({
         type: f.type,
@@ -2038,10 +2629,82 @@ async function loadFullResultsPayload(assessmentId) {
   };
 }
 
+/**
+ * Deriva six_pack a partir dos scores quando findings estão vazios (fallback de último recurso).
+ * Garante que o usuário sempre veja algo quando tem scores.
+ */
+function deriveSixPackFromScores(scores, processCatalog) {
+  const catalogMap = {};
+  (processCatalog || []).forEach((p) => { catalogMap[p.process_key] = p; });
+  function getProcessMeta(processKey) {
+    return catalogMap[processKey] || { protects_dimension: 'RISCO', typical_impact_band: 'MEDIUM' };
+  }
+
+  const scoreList = (scores || []).map((s) => ({
+    ...s,
+    typical_impact_band: (catalogMap[s.process_key]?.typical_impact_band) || 'MEDIUM',
+    quick_win: !!(catalogMap[s.process_key]?.quick_win),
+  }));
+
+  let vazamentosBase = scoreList.filter((s) => s.band === 'LOW');
+  vazamentosBase = firstNByOrder(
+    vazamentosBase,
+    3,
+    (a, b) => (BAND_BEST_FIRST[a.typical_impact_band] ?? 9) - (BAND_BEST_FIRST[b.typical_impact_band] ?? 9) || b.score_numeric - a.score_numeric
+  );
+  if (vazamentosBase.length < 3) {
+    const used = new Set(vazamentosBase.map((s) => s.process_key));
+    const byScore = scoreList.filter((s) => !used.has(s.process_key)).sort((a, b) => a.score_numeric - b.score_numeric);
+    vazamentosBase = [...vazamentosBase, ...byScore.slice(0, 3 - vazamentosBase.length)];
+  }
+
+  let alavancaCandidates = scoreList.filter((s) => s.band === 'MEDIUM');
+  const usedV = new Set(vazamentosBase.map((s) => s.process_key));
+  if (alavancaCandidates.length < 3) {
+    const lowMed = scoreList.filter((s) => (s.band === 'LOW' || s.band === 'MEDIUM') && !usedV.has(s.process_key));
+    alavancaCandidates = [...alavancaCandidates, ...lowMed];
+  }
+  alavancaCandidates = alavancaCandidates.sort((a, b) => {
+    if (a.quick_win !== b.quick_win) return a.quick_win ? -1 : 1;
+    return (BAND_BEST_FIRST[a.typical_impact_band] ?? 9) - (BAND_BEST_FIRST[b.typical_impact_band] ?? 9) || b.score_numeric - a.score_numeric;
+  });
+  const alavancasBase = alavancaCandidates.slice(0, 3);
+
+  function toItem(type, s) {
+    const processLabel = PROCESS_OWNER_LABEL[s.process_key] || s.process_key;
+    const meta = getProcessMeta(s.process_key);
+    const protects = meta.protects_dimension || 'RISCO';
+    const answers = (s.support?.answers || []).slice(0, 4).map((a) => ({
+      process_key: s.process_key,
+      question_key: a.question_key,
+      question_text: '',
+      answer_value: a.answer_value,
+      answer_text: humanizeAnswerValue(a.answer_value),
+    }));
+    return {
+      title: `${processLabel} (${s.band})`,
+      o_que_acontece: getOQueEstaAcontecendo(type, s.process_key, protects, s.band, meta),
+      custo_nao_agir: getCustoDeNaoAgirFaixa(s.band, meta),
+      muda_em_30_dias: getOQueMudaEm30Dias(type, s.process_key, protects, s.band),
+      primeiro_passo_action_id: null,
+      primeiro_passo: FALLBACK_ACTION_TITLE,
+      is_fallback: true,
+      is_gap_content: true,
+      evidence_keys: answers.map((a) => `${a.process_key}_${a.question_key}`),
+      supporting: { processes: [s.process_key], como_puxou_nivel: null, questions: answers },
+    };
+  }
+
+  return {
+    vazamentos: vazamentosBase.map((s) => toItem('VAZAMENTO', s)),
+    alavancas: alavancasBase.map((s) => toItem('ALAVANCA', s)),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // 7) GET /full/assessments/:id/results — compat (usa findings persistidos)
 // ---------------------------------------------------------------------------
-router.get('/full/assessments/:id/results', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/results', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2067,7 +2730,7 @@ router.get('/full/assessments/:id/results', requireAuth, requireFullEntitlement,
 });
 
 // GET /full/results?assessment_id=...&company_id=...
-router.get('/full/results', requireAuth, async (req, res) => {
+router.get('/full/results', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.query.assessment_id;
@@ -2088,7 +2751,7 @@ router.get('/full/results', requireAuth, async (req, res) => {
       return apiError(res, 400, 'DIAG_NOT_READY', 'Conclua o diagnóstico para ver o resultado.');
     }
 
-    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id, req.user?.email);
+    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id, req.user?.email, req.user?.role);
     if (!access) return apiError(res, 403, 'ACCESS_DENIED', 'Sem acesso a este recurso.');
 
     let loaded = await loadFullResultsPayload(sourceAssessment.id);
@@ -2097,7 +2760,7 @@ router.get('/full/results', requireAuth, async (req, res) => {
     const hasFindings = (loaded.payload?.findings?.length ?? 0) > 0;
     const hasScores = (loaded.payload?.scores_by_process?.length ?? 0) > 0;
     if (!hasFindings && hasScores) {
-      const segment = assessment.segment || 'C';
+      const segment = sourceAssessment.segment || assessment.segment || 'C';
       const scores = loaded.payload.scores_by_process;
       const processKeys = [...new Set(scores.map((s) => s.process_key))];
 
@@ -2127,6 +2790,7 @@ router.get('/full/results', requireAuth, async (req, res) => {
 
       const findingsResult = await buildAndPersistFindings({
         assessmentId: sourceAssessment.id,
+        companyId: companyId || assessment.company_id,
         segment,
         scores,
         answers,
@@ -2136,6 +2800,28 @@ router.get('/full/results', requireAuth, async (req, res) => {
       if (!findingsResult.error) {
         console.log('[AUDIT] full_results findings_backfill assessment_id=' + sourceAssessment.id);
         loaded = await loadFullResultsPayload(sourceAssessment.id);
+      } else {
+        console.warn('[AUDIT] full_results findings_backfill_failed', {
+          assessment_id: sourceAssessment.id,
+          step: findingsResult.step,
+          error: findingsResult.error?.message,
+        });
+      }
+    }
+
+    const stillEmpty = (loaded.payload?.six_pack?.vazamentos?.length ?? 0) === 0 && (loaded.payload?.six_pack?.alavancas?.length ?? 0) === 0;
+    if (stillEmpty && (loaded.payload?.scores_by_process?.length ?? 0) > 0) {
+      const scores = loaded.payload.scores_by_process;
+      const processKeys = [...new Set(scores.map((s) => s.process_key))];
+      const { data: processCatalog } = await supabase
+        .schema('public')
+        .from('full_process_catalog')
+        .select('process_key, protects_dimension, owner_alert_text, typical_impact_band, typical_impact_text, quick_win')
+        .in('process_key', processKeys);
+      const derived = deriveSixPackFromScores(scores, processCatalog || []);
+      if (derived.vazamentos.length > 0 || derived.alavancas.length > 0) {
+        console.log('[AUDIT] full_results derived_six_pack_from_scores assessment_id=' + sourceAssessment.id);
+        loaded.payload.six_pack = derived;
       }
     }
 
@@ -2147,7 +2833,7 @@ router.get('/full/results', requireAuth, async (req, res) => {
 });
 
 // GET /full/plan/status?assessment_id=...&company_id=...
-router.get('/full/plan/status', requireAuth, async (req, res) => {
+router.get('/full/plan/status', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.query.assessment_id;
@@ -2158,7 +2844,7 @@ router.get('/full/plan/status', requireAuth, async (req, res) => {
     const assessment = await getAssessment(assessmentId, companyId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
 
-    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id, req.user?.email);
+    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id, req.user?.email, req.user?.role);
     if (!access) return apiError(res, 403, 'ACCESS_DENIED', 'Sem acesso a este recurso.');
 
     const { data: plan, error } = await supabase
@@ -2202,7 +2888,7 @@ router.get('/full/plan/status', requireAuth, async (req, res) => {
 // ---------------------------------------------------------------------------
 // 8) GET /full/assessments/:id/recommendations — recs + ações do catálogo
 // ---------------------------------------------------------------------------
-router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/recommendations', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2241,7 +2927,7 @@ router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEnti
     const { data: gapCauses } = await supabase
       .schema('public')
       .from('full_gap_causes')
-      .select('gap_id, cause_primary')
+      .select('gap_id, cause_primary, evidence_json')
       .eq('assessment_id', assessmentId)
       .in('gap_id', CAUSE_ENGINE_GAP_IDS);
 
@@ -2399,6 +3085,9 @@ router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEnti
 
       const rec = recs[0];
       const actionKeys = acts.map((a) => a.action_key);
+      const gapCauseRow = gapId ? gapCauseByGap[gapId] : null;
+      const evidenceArr = Array.isArray(gapCauseRow?.evidence_json) ? gapCauseRow.evidence_json : [];
+      const evidenceKeys = evidenceArr.map((e) => `${e.process_key || (gapDef && gapDef.processo) || s.process_key}_${e.q_id || e.question_key || ''}`).filter(Boolean);
 
       const { error: genErr } = await supabase
         .schema('public')
@@ -2423,6 +3112,8 @@ router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEnti
         recommendation: rec,
         actions: acts,
         is_fallback: isFallback,
+        is_gap_content: isFallback,
+        evidence_keys: evidenceKeys,
         gap_label: gap_label ?? undefined,
         cause_primary: cause_primary ?? undefined,
         mechanism_label: mechanism_label ?? undefined,
@@ -2432,7 +3123,12 @@ router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEnti
       });
     }
 
-    return res.json({ recommendations });
+    const role = req.user?.role || 'USER';
+    const filtered = role === 'USER'
+      ? recommendations.filter((r) => !r.is_gap_content)
+      : recommendations;
+
+    return res.json({ recommendations: filtered });
   } catch (err) {
     console.error('Erro GET /full/assessments/:id/recommendations:', err.message);
     return apiError(res, 500, 'INTERNAL_ERROR', 'Erro inesperado. Tente novamente.');
@@ -2442,7 +3138,7 @@ router.get('/full/assessments/:id/recommendations', requireAuth, requireFullEnti
 // ---------------------------------------------------------------------------
 // 9) POST /full/assessments/:id/plan/select — exatamente 3 ações
 // ---------------------------------------------------------------------------
-router.post('/full/assessments/:id/plan/select', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/plan/select', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2565,6 +3261,7 @@ router.post('/full/assessments/:id/plan/select', requireAuth, requireFullEntitle
       return res.status(500).json({ error: 'erro ao salvar plano' });
     }
 
+    logEvent(supabase, { event: 'plan_created', userId, companyId, assessmentId, meta: { action_count: toInsert.length } });
     return res.status(200).json({ ok: true, plan: toInsert });
   } catch (err) {
     console.error('Erro POST /full/assessments/:id/plan/select:', err.message);
@@ -2577,7 +3274,7 @@ router.post('/full/assessments/:id/plan/select', requireAuth, requireFullEntitle
 // ---------------------------------------------------------------------------
 
 // GET /full/actions/:action_key/dod — DoD do catálogo
-router.get('/full/actions/:action_key/dod', requireAuth, async (req, res) => {
+router.get('/full/actions/:action_key/dod', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const actionKey = decodeURIComponent(req.params.action_key || '');
     if (!actionKey) {
@@ -2607,8 +3304,20 @@ router.get('/full/actions/:action_key/dod', requireAuth, async (req, res) => {
       const fromCatalog = getActionEntryFromCatalog(actionKey);
       if (fromCatalog?.dod_checklist?.length) {
         dodChecklist = fromCatalog.dod_checklist;
-      } else if (actionKey.startsWith('fallback-')) {
-        dodChecklist = ['Definir escopo', 'Executar conforme contexto', 'Documentar resultado'];
+      } else {
+        const { data: mech } = await supabase
+          .schema('public')
+          .from('full_cause_mechanism_actions')
+          .select('primeiro_passo_30d')
+          .eq('action_key', actionKey)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+        if (mech?.primeiro_passo_30d) {
+          dodChecklist = [mech.primeiro_passo_30d];
+        } else {
+          dodChecklist = ['Definir escopo', 'Executar conforme contexto', 'Documentar resultado'];
+        }
       }
     }
 
@@ -2620,7 +3329,7 @@ router.get('/full/actions/:action_key/dod', requireAuth, async (req, res) => {
 });
 
 // POST /full/assessments/:id/plan/:action_key/dod/confirm
-router.post('/full/assessments/:id/plan/:action_key/dod/confirm', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/plan/:action_key/dod/confirm', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2724,7 +3433,7 @@ router.post('/full/assessments/:id/plan/:action_key/dod/confirm', requireAuth, r
 });
 
 // POST /full/assessments/:id/plan/:action_key/evidence — write-once
-router.post('/full/assessments/:id/plan/:action_key/evidence', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/plan/:action_key/evidence', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2775,10 +3484,7 @@ router.post('/full/assessments/:id/plan/:action_key/evidence', requireAuth, requ
       .maybeSingle();
 
     if (existing) {
-      return res.status(200).json({
-        already_exists: true,
-        evidence: existing
-      });
+      return apiError(res, 409, 'EVIDENCE_WRITE_ONCE', 'Evidência já registrada. Não é possível editar.');
     }
 
     const declared_gain = buildDeclaredGain(beforeStr, afterStr);
@@ -2799,20 +3505,15 @@ router.post('/full/assessments/:id/plan/:action_key/evidence', requireAuth, requ
 
     if (insErr) {
       if (insErr.code === '23505') {
-        const { data: again } = await supabase
-          .schema('public')
-          .from('full_action_evidence')
-          .select('*')
-          .eq('assessment_id', assessmentId)
-          .eq('action_key', actionKey)
-          .single();
-        return res.status(200).json({ already_exists: true, evidence: again });
+        return apiError(res, 409, 'EVIDENCE_WRITE_ONCE', 'Evidência já registrada. Não é possível editar.');
       }
       console.error('Erro ao salvar evidência:', insErr.message);
       return apiError(res, 500, 'EVIDENCE_SAVE_ERROR', 'Erro ao registrar evidência. Tente novamente.');
     }
 
     emitValueEvent('GAIN_DECLARED', { assessment_id: assessmentId, company_id: companyId, meta: { action_key: actionKey } });
+    logEvent(supabase, { event: 'evidence_recorded', userId, companyId, assessmentId, meta: { action_key: actionKey } });
+    logEvent(supabase, { event: 'gain_declared', userId, companyId, assessmentId, meta: { action_key: actionKey, declared_gain: declared_gain } });
 
     return res.status(201).json({ evidence: created });
   } catch (err) {
@@ -2824,7 +3525,7 @@ router.post('/full/assessments/:id/plan/:action_key/evidence', requireAuth, requ
 // ---------------------------------------------------------------------------
 // Dashboard FULL (progresso + próxima ação determinística)
 // ---------------------------------------------------------------------------
-router.get('/full/assessments/:id/dashboard', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/dashboard', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -2847,6 +3548,7 @@ router.get('/full/assessments/:id/dashboard', requireAuth, requireFullEntitlemen
 
     if (planErr || !plan || plan.length === 0) {
       return res.json({
+        assessment_id: assessmentId,
         progress: '0/3',
         next_action_key: null,
         actions: [],
@@ -2878,10 +3580,36 @@ router.get('/full/assessments/:id/dashboard', requireAuth, requireFullEntitlemen
     const catalogMap = {};
     (catalog || []).forEach((c) => { catalogMap[c.action_key] = c; });
     const { getActionEntryFromCatalog } = require('../lib/fullCatalog');
+    const DEFAULT_DOD_CHECKLIST = ['Definir escopo', 'Executar conforme contexto', 'Documentar resultado'];
     for (const ak of actionKeys) {
       if (!catalogMap[ak]) {
         const fromCatalog = getActionEntryFromCatalog(ak);
         if (fromCatalog) catalogMap[ak] = { action_key: ak, title: fromCatalog.title, dod_checklist: fromCatalog.dod_checklist };
+      }
+    }
+    const missingDod = actionKeys.filter((ak) => {
+      const c = catalogMap[ak] || {};
+      return !(c.dod_checklist && Array.isArray(c.dod_checklist) && c.dod_checklist.length > 0);
+    });
+    if (missingDod.length > 0) {
+      const { data: mechRows } = await supabase
+        .schema('public')
+        .from('full_cause_mechanism_actions')
+        .select('action_key, primeiro_passo_30d')
+        .in('action_key', missingDod)
+        .eq('is_active', true);
+      for (const row of mechRows || []) {
+        if (row.primeiro_passo_30d && (!catalogMap[row.action_key] || !catalogMap[row.action_key].dod_checklist?.length)) {
+          if (!catalogMap[row.action_key]) catalogMap[row.action_key] = { action_key: row.action_key };
+          catalogMap[row.action_key].dod_checklist = [row.primeiro_passo_30d];
+        }
+      }
+      for (const ak of missingDod) {
+        const c = catalogMap[ak] || {};
+        if (!(c.dod_checklist && c.dod_checklist.length > 0)) {
+          if (!catalogMap[ak]) catalogMap[ak] = { action_key: ak };
+          catalogMap[ak].dod_checklist = DEFAULT_DOD_CHECKLIST;
+        }
       }
     }
     const dodSet = new Set((dodRows || []).map((r) => r.action_key));
@@ -2968,6 +3696,7 @@ router.get('/full/assessments/:id/dashboard', requireAuth, requireFullEntitlemen
     });
 
     return res.json({
+      assessment_id: assessmentId,
       progress,
       next_action_key: nextActionKey,
       actions,
@@ -2980,7 +3709,7 @@ router.get('/full/assessments/:id/dashboard', requireAuth, requireFullEntitlemen
 });
 
 // GET /full/assessments/:id/close-summary — somente quando ciclo pronto
-router.get('/full/assessments/:id/close-summary', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/close-summary', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -3062,7 +3791,7 @@ router.get('/full/assessments/:id/close-summary', requireAuth, requireFullEntitl
 });
 
 // POST /full/assessments/:id/close — fechar ciclo (status => CLOSED)
-router.post('/full/assessments/:id/close', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/close', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -3132,16 +3861,20 @@ router.post('/full/assessments/:id/close', requireAuth, requireFullEntitlement, 
       return apiError(res, 400, 'DROP_REASON_REQUIRED', 'Ações descartadas exigem motivo.');
     }
 
+    const now = new Date().toISOString();
     const { error: updErr } = await supabase
       .schema('public')
       .from('full_assessments')
-      .update({ status: 'CLOSED', updated_at: new Date().toISOString() })
+      .update({ status: 'CLOSED', closed_at: now, updated_at: now })
       .eq('id', assessmentId);
 
     if (updErr) {
       console.error('Erro ao fechar ciclo:', updErr.message);
       return apiError(res, 500, 'CYCLE_CLOSE_ERROR', 'Erro ao fechar ciclo. Tente novamente.');
     }
+
+    const { persistSnapshotOnClose } = require('../lib/fullSnapshot');
+    await persistSnapshotOnClose(assessmentId, companyId, plan);
 
     const { data: evRows } = await supabase
       .schema('public')
@@ -3174,7 +3907,7 @@ router.post('/full/assessments/:id/close', requireAuth, requireFullEntitlement, 
 });
 
 // POST /full/assessments/:id/new-cycle — novo ciclo de execução (NÃO cria assessment)
-router.post('/full/assessments/:id/new-cycle', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/assessments/:id/new-cycle', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -3182,7 +3915,7 @@ router.post('/full/assessments/:id/new-cycle', requireAuth, requireFullEntitleme
 
     if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada. Acesse a partir do menu ou link correto.');
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
 
     const assessment = await getAssessment(assessmentId, companyId);
@@ -3272,7 +4005,7 @@ router.post('/full/assessments/:id/new-cycle', requireAuth, requireFullEntitleme
 // ---------------------------------------------------------------------------
 // 10) GET /full/assessments/:id/plan
 // ---------------------------------------------------------------------------
-router.get('/full/assessments/:id/plan', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/assessments/:id/plan', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -3314,7 +4047,7 @@ router.get('/full/assessments/:id/plan', requireAuth, requireFullEntitlement, as
 // ---------------------------------------------------------------------------
 // 11) PATCH /full/assessments/:id/plan/:action_key/status
 // ---------------------------------------------------------------------------
-router.patch('/full/assessments/:id/plan/:action_key/status', requireAuth, requireFullEntitlement, async (req, res) => {
+router.patch('/full/assessments/:id/plan/:action_key/status', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -3357,8 +4090,11 @@ router.patch('/full/assessments/:id/plan/:action_key/status', requireAuth, requi
         return apiError(res, 400, 'EVIDENCE_REQUIRED', 'Para concluir, registre a evidência (antes e depois).');
       }
     }
-    if (status === 'DROPPED' && (!dropped_reason || typeof dropped_reason !== 'string' || dropped_reason.trim().length === 0)) {
-      return apiError(res, 400, 'DROP_REASON_REQUIRED', 'Ao descartar uma ação, informe o motivo.');
+    if (status === 'DROPPED') {
+      const reason = typeof dropped_reason === 'string' ? dropped_reason.trim() : '';
+      if (reason.length < 20) {
+        return apiError(res, 400, 'DROP_REASON_REQUIRED', 'Ao descartar uma ação, informe o motivo (mínimo 20 caracteres).');
+      }
     }
 
     const company = await ensureCompanyAccess(userId, companyId);
@@ -3405,14 +4141,14 @@ router.patch('/full/assessments/:id/plan/:action_key/status', requireAuth, requi
 
 // GET /full/actions?assessment_id=...&company_id=...
 // Motor FIT: só retorna sugestões com encaixe real nas respostas. ZERO placeholder.
-router.get('/full/actions', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/actions', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     let assessmentId = req.query.assessment_id;
     const companyId = req.query.company_id;
     if (!companyId) return apiError(res, 400, 'COMPANY_REQUIRED', 'Empresa não informada. Acesse a partir do menu ou link correto.');
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) return apiError(res, 404, 'COMPANY_NOT_FOUND', 'Empresa não encontrada ou sem acesso.');
 
     let assessment = null;
@@ -3499,7 +4235,7 @@ router.get('/full/actions', requireAuth, requireFullEntitlement, async (req, res
       ok: true,
       suggestions,
       content_gaps,
-      scores_by_process: scores || [],
+      scores_by_process: (scores || []).map((s) => ({ ...s, score_numeric: toExternalScore(s.score_numeric) })),
       assessment_id: assessment.id,
       required_count,
       remaining_count,
@@ -3514,7 +4250,7 @@ router.get('/full/actions', requireAuth, requireFullEntitlement, async (req, res
 });
 
 // POST /full/cycle/select-actions
-router.post('/full/cycle/select-actions', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/cycle/select-actions', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id || req.body.company_id;
@@ -3537,12 +4273,15 @@ router.post('/full/cycle/select-actions', requireAuth, requireFullEntitlement, a
     }
 
     const arr = Array.isArray(items) ? items : [];
-    if (arr.length !== required_count) {
-      return res.status(400).json({
-        error: required_count === 1 ? 'Selecione exatamente 1 ação.' : `Selecione exatamente ${required_count} ações.`,
-        required_count,
-        remaining_count,
-      });
+    const isLastBlock = remaining_count <= 3;
+    if (isLastBlock) {
+      if (arr.length < 1) {
+        return apiError(res, 400, 'ACTION_COUNT_INVALID', 'Selecione pelo menos 1 ação.', { required_count, remaining_count });
+      }
+    } else {
+      if (arr.length !== 3) {
+        return apiError(res, 400, 'ACTION_COUNT_INVALID', 'Selecione exatamente 3 ações.', { required_count, remaining_count });
+      }
     }
 
     const seenAction = new Set();
@@ -3583,6 +4322,13 @@ router.post('/full/cycle/select-actions', requireAuth, requireFullEntitlement, a
 
     const { getActionMetaFromCatalog } = require('../lib/fullCatalog');
 
+    const unknownKeys = validated.filter((v) => !actMap[v.action_key] && !getActionMetaFromCatalog(v.action_key));
+    if (unknownKeys.length > 0) {
+      return apiError(res, 400, 'ACTION_SEGMENT_MISMATCH', 'Ação não disponível para este diagnóstico.', {
+        unknown_action_keys: unknownKeys.map((v) => v.action_key),
+      });
+    }
+
     const toInsert = validated.map((v) => {
       const fromDb = actMap[v.action_key];
       const fromCatalog = !fromDb ? getActionMetaFromCatalog(v.action_key) : null;
@@ -3614,6 +4360,7 @@ router.post('/full/cycle/select-actions', requireAuth, requireFullEntitlement, a
     if (insErr) return res.status(500).json({ error: 'erro ao salvar ciclo' });
 
     emitValueEvent('PLAN_CREATED', { assessment_id: assessmentId, company_id: companyId, meta: { action_count: toInsert.length } });
+    logEvent(supabase, { event: 'plan_created', userId, companyId, assessmentId, meta: { action_count: toInsert.length } });
 
     return res.status(200).json({ ok: true, actions: toInsert });
   } catch (err) {
@@ -3623,7 +4370,7 @@ router.post('/full/cycle/select-actions', requireAuth, requireFullEntitlement, a
 });
 
 // POST /full/cycle/actions/:id/evidence (write-once)
-router.post('/full/cycle/actions/:id/evidence', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/cycle/actions/:id/evidence', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const actionKey = decodeURIComponent(req.params.id || '');
     const companyId = req.query.company_id || req.body.company_id;
@@ -3648,7 +4395,7 @@ router.post('/full/cycle/actions/:id/evidence', requireAuth, requireFullEntitlem
       .eq('assessment_id', assessmentId)
       .eq('action_key', actionKey)
       .maybeSingle();
-    if (existing) return res.status(409).json({ error: 'evidência já registrada (write-once)' });
+    if (existing) return apiError(res, 409, 'EVIDENCE_WRITE_ONCE', 'Evidência já registrada. Não é possível editar.');
 
     const beforeStr = String(beforeText || '').trim();
     const afterStr = String(afterText || '').trim();
@@ -3678,7 +4425,7 @@ router.post('/full/cycle/actions/:id/evidence', requireAuth, requireFullEntitlem
 });
 
 // POST /full/cycle/actions/:id/mark-done
-router.post('/full/cycle/actions/:id/mark-done', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/cycle/actions/:id/mark-done', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const actionKey = decodeURIComponent(req.params.id || '');
     const companyId = req.query.company_id || req.body.company_id;
@@ -3736,7 +4483,7 @@ router.post('/full/cycle/actions/:id/mark-done', requireAuth, requireFullEntitle
 });
 
 // GET /full/dashboard?assessment_id=...&company_id=...
-router.get('/full/dashboard', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/dashboard', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   const assessmentId = req.query.assessment_id;
   const companyId = req.query.company_id;
   if (!assessmentId) return res.status(400).json({ error: 'assessment_id é obrigatório' });
@@ -3747,7 +4494,7 @@ router.get('/full/dashboard', requireAuth, requireFullEntitlement, async (req, r
 // ---------------------------------------------------------------------------
 // Prompt 4: POST /full/plan, GET /full/plan (aliases idempotentes)
 // ---------------------------------------------------------------------------
-router.post('/full/plan', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/plan', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id || req.body.company_id;
@@ -3860,7 +4607,7 @@ router.post('/full/plan', requireAuth, requireFullEntitlement, async (req, res) 
   }
 });
 
-router.get('/full/plan', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/plan', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   const assessmentId = req.query.assessment_id;
   const companyId = req.query.company_id;
   if (!assessmentId) return res.status(400).json({ error: 'assessment_id é obrigatório' });
@@ -3869,7 +4616,7 @@ router.get('/full/plan', requireAuth, requireFullEntitlement, async (req, res) =
 });
 
 // POST /full/actions/:action_key/status — atualiza status (NOT_STARTED/IN_PROGRESS/DONE/DROPPED)
-router.post('/full/actions/:action_key/status', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/actions/:action_key/status', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const actionKey = decodeURIComponent(req.params.action_key || '');
@@ -3906,8 +4653,11 @@ router.post('/full/actions/:action_key/status', requireAuth, requireFullEntitlem
         .maybeSingle();
       if (!evRow) return apiError(res, 400, 'EVIDENCE_REQUIRED', 'Para concluir, registre a evidência (antes e depois).');
     }
-    if (status === 'DROPPED' && (!dropped_reason || String(dropped_reason).trim().length === 0)) {
-      return apiError(res, 400, 'DROP_REASON_REQUIRED', 'Ao descartar uma ação, informe o motivo.');
+    if (status === 'DROPPED') {
+      const reason = typeof dropped_reason === 'string' ? dropped_reason.trim() : '';
+      if (reason.length < 20) {
+        return apiError(res, 400, 'DROP_REASON_REQUIRED', 'Ao descartar uma ação, informe o motivo (mínimo 20 caracteres).');
+      }
     }
 
     const company = await ensureCompanyAccess(userId, companyId);
@@ -3939,7 +4689,7 @@ router.post('/full/actions/:action_key/status', requireAuth, requireFullEntitlem
 });
 
 // POST /full/actions/:action_key/evidence (write-once) — aceita evidência, antes, depois
-router.post('/full/actions/:action_key/evidence', requireAuth, requireFullEntitlement, async (req, res) => {
+router.post('/full/actions/:action_key/evidence', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   const actionKey = decodeURIComponent(req.params.action_key || '');
   const companyId = req.query.company_id || req.body.company_id;
   const assessmentId = req.body.assessment_id || req.query.assessment_id;
@@ -3969,7 +4719,7 @@ router.post('/full/actions/:action_key/evidence', requireAuth, requireFullEntitl
     .eq('action_key', actionKey)
     .maybeSingle();
 
-  if (existing) return res.status(409).json({ error: 'evidência já registrada (write-once)' });
+  if (existing) return apiError(res, 409, 'EVIDENCE_WRITE_ONCE', 'Evidência já registrada. Não é possível editar.');
 
   const ganhoDeclarado = `Ganho: ${String(depois).trim()} (antes: ${String(antes).trim()})`;
 
@@ -3988,6 +4738,8 @@ router.post('/full/actions/:action_key/evidence', requireAuth, requireFullEntitl
     .single();
 
   if (insErr) return res.status(500).json({ error: 'erro ao registrar evidência' });
+  logEvent(supabase, { event: 'evidence_recorded', userId: req.user.id, companyId, assessmentId, meta: { action_key: actionKey } });
+  logEvent(supabase, { event: 'gain_declared', userId: req.user.id, companyId, assessmentId, meta: { action_key: actionKey, declared_gain: ganhoDeclarado } });
   return res.status(201).json({ evidence: created, ganho_declarado: ganhoDeclarado });
 });
 
@@ -4009,7 +4761,7 @@ router.get('/full/consultor/assessments/:id', requireAuth, async (req, res) => {
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
 
     const cid = assessment.company_id;
-    const access = await ensureConsultantOrOwnerAccess(userId, cid);
+    const access = await ensureConsultantOrOwnerAccess(userId, cid, req.user?.email, req.user?.role);
     if (!access) return res.status(403).json({ error: 'sem acesso como consultor' });
 
     const [answersRes, scoresRes, planRes, evRes] = await Promise.all([
@@ -4033,10 +4785,36 @@ router.get('/full/consultor/assessments/:id', requireAuth, async (req, res) => {
     const catalogMap = {};
     (catalog || []).forEach((c) => { catalogMap[c.action_key] = c; });
     const { getActionEntryFromCatalog } = require('../lib/fullCatalog');
+    const DEFAULT_DOD_CHECKLIST = ['Definir escopo', 'Executar conforme contexto', 'Documentar resultado'];
     for (const ak of actionKeys) {
       if (!catalogMap[ak]) {
         const fromCatalog = getActionEntryFromCatalog(ak);
         if (fromCatalog) catalogMap[ak] = { action_key: ak, title: fromCatalog.title, dod_checklist: fromCatalog.dod_checklist };
+      }
+    }
+    const missingDod = actionKeys.filter((ak) => {
+      const c = catalogMap[ak] || {};
+      return !(c.dod_checklist && Array.isArray(c.dod_checklist) && c.dod_checklist.length > 0);
+    });
+    if (missingDod.length > 0) {
+      const { data: mechRows } = await supabase
+        .schema('public')
+        .from('full_cause_mechanism_actions')
+        .select('action_key, primeiro_passo_30d')
+        .in('action_key', missingDod)
+        .eq('is_active', true);
+      for (const row of mechRows || []) {
+        if (row.primeiro_passo_30d && (!catalogMap[row.action_key] || !catalogMap[row.action_key].dod_checklist?.length)) {
+          if (!catalogMap[row.action_key]) catalogMap[row.action_key] = { action_key: row.action_key };
+          catalogMap[row.action_key].dod_checklist = [row.primeiro_passo_30d];
+        }
+      }
+      for (const ak of missingDod) {
+        const c = catalogMap[ak] || {};
+        if (!(c.dod_checklist && c.dod_checklist.length > 0)) {
+          if (!catalogMap[ak]) catalogMap[ak] = { action_key: ak };
+          catalogMap[ak].dod_checklist = DEFAULT_DOD_CHECKLIST;
+        }
       }
     }
     const evMap = {};
@@ -4146,7 +4924,7 @@ router.post('/full/consultor/assessments/:id/actions/:action_key/notes', require
     const assessment = companyId ? await getAssessment(assessmentId, companyId) : await getAssessmentById(assessmentId);
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
 
-    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id);
+    const access = await ensureConsultantOrOwnerAccess(userId, assessment.company_id, req.user?.email, req.user?.role);
     if (!access) return res.status(403).json({ error: 'sem acesso como consultor' });
 
     if (!note_type || !['ORIENTACAO', 'IMPEDIMENTO', 'PROXIMO_PASSO'].includes(note_type)) {
@@ -4191,7 +4969,7 @@ router.post('/full/consultor/assessments/:id/actions/:action_key/notes', require
 });
 
 // GET /full/assessments/:id/actions/:action_key/notes — lista notas (cliente ou consultor)
-router.get('/full/assessments/:id/actions/:action_key/notes', requireAuth, async (req, res) => {
+router.get('/full/assessments/:id/actions/:action_key/notes', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const userId = req.user.id;
     const assessmentId = req.params.id;
@@ -4202,7 +4980,7 @@ router.get('/full/assessments/:id/actions/:action_key/notes', requireAuth, async
     if (!assessment) return apiError(res, 404, 'DIAG_NOT_FOUND', 'Diagnóstico não encontrado.');
 
     const cid = assessment.company_id;
-    const access = await ensureConsultantOrOwnerAccess(userId, cid);
+    const access = await ensureConsultantOrOwnerAccess(userId, cid, req.user?.email, req.user?.role);
     if (!access) return apiError(res, 403, 'ACCESS_DENIED', 'Sem acesso a este recurso.');
 
     const { data: notes, error } = await supabase

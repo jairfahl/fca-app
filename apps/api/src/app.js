@@ -14,6 +14,9 @@ const fullRoutes = require('./routes/full');
 const meRoutes = require('./routes/me');
 const consultorRoutes = require('./routes/consultor');
 const helpRequestsRoutes = require('./routes/helpRequests');
+const supportRoutes = require('./routes/support');
+const messagesRoutes = require('./routes/messages');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 
@@ -48,6 +51,10 @@ app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// Auth: popula req.user a partir do JWT (não falha em token ausente/inválido)
+const { populateAuth } = require('./middleware/auth');
+app.use(populateAuth);
+
 // Rotas
 app.use('/', pingRoutes);
 app.use('/', diagnosticRoutes);
@@ -60,7 +67,10 @@ app.use('/', gateCRoutes);
 app.use('/', leadsRoutes);
 app.use('/', meRoutes);
 app.use('/', helpRequestsRoutes);
+app.use('/', supportRoutes);
 app.use('/consultor', consultorRoutes);
+app.use('/messages', messagesRoutes);
+app.use('/admin', adminRoutes);
 app.use('/', fullRoutes);
 console.log('ROUTES OK: f4 mounted');
 console.log('ROUTES OK: f4b mounted');

@@ -43,6 +43,7 @@ jest.mock('../src/lib/supabase', () => {
   };
   const getTableResult = (table) => {
     if (table === 'companies') return [{ id: 'company-1', name: 'X', owner_user_id: 'u1', created_at: '2020-01-01' }];
+    if (table === 'consultor_companies') return global.__mockConsultorCompanies ?? [];
     if (table === 'entitlements') return null;
     if (table === 'full_assessments') return null;
     if (table === 'assessments') return [];
@@ -115,6 +116,49 @@ describe('GET /consultor/companies', () => {
       .set('Authorization', 'Bearer user-token');
 
     expect(res.status).toBe(403);
+  });
+});
+
+describe('GET /consultor/companies — filtro por vínculo consultor↔empresa', () => {
+  beforeEach(() => {
+    global.__mockConsultorCompanies = [];
+  });
+
+  it('CONSULTOR sem empresas vinculadas retorna array vazio', async () => {
+    global.__mockConsultorCompanies = [];
+
+    const res = await request(app)
+      .get('/consultor/companies')
+      .set('Authorization', 'Bearer consultor-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('companies');
+    expect(res.body.companies).toHaveLength(0);
+  });
+
+  it('CONSULTOR com 1 empresa vinculada retorna só ela', async () => {
+    global.__mockConsultorCompanies = [{ company_id: 'company-1' }];
+
+    const res = await request(app)
+      .get('/consultor/companies')
+      .set('Authorization', 'Bearer consultor-token');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.companies)).toBe(true);
+    expect(res.body.companies).toHaveLength(1);
+    expect(res.body.companies[0].company_id).toBe('company-1');
+  });
+
+  it('ADMIN retorna todas as empresas independente de vínculos', async () => {
+    global.__mockConsultorCompanies = []; // ADMIN não usa esta tabela
+
+    const res = await request(app)
+      .get('/consultor/companies')
+      .set('Authorization', 'Bearer admin-token');
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.companies)).toBe(true);
+    expect(res.body.companies.length).toBeGreaterThanOrEqual(1);
   });
 });
 

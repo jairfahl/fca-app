@@ -51,6 +51,8 @@ jest.mock('../src/lib/supabase', () => {
       contains: jest.fn().mockReturnThis(),
       order: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockResolvedValue({ data: {}, error: null }),
       maybeSingle: jest.fn().mockResolvedValue(result),
       then: (resolve) => Promise.resolve(result).then(resolve),
       catch: (fn) => Promise.resolve(result).catch(fn),
@@ -104,6 +106,9 @@ describe('GET /full/actions', () => {
     expect(Array.isArray(res.body.suggestions)).toBe(true);
     expect(res.body.suggestions.length).toBeGreaterThanOrEqual(1);
     expect(res.body.suggestions.some((s) => s.action_key && s.recommendation)).toBe(true);
+    // score_numeric deve estar em escala 0–100 (mock: 2 → 20)
+    expect(Array.isArray(res.body.scores_by_process)).toBe(true);
+    expect(res.body.scores_by_process[0].score_numeric).toBe(20);
   });
 
   it('retorna 200 com suggestions vazio quando não há match (sem fallback)', async () => {
@@ -121,5 +126,76 @@ describe('GET /full/actions', () => {
     expect(Array.isArray(res.body.suggestions)).toBe(true);
     expect(res.body.suggestions.length).toBe(0);
     expect(res.body.suggestions.some((s) => s.action_key?.startsWith('fallback-'))).toBe(false);
+  });
+});
+
+describe('POST /full/cycle/select-actions — validação de bloco', () => {
+  beforeEach(() => {
+    global.__mockActionsAssessmentStatus = 'SUBMITTED';
+  });
+
+  it('retorna 200 no último bloco com 2 ações (remaining=2)', async () => {
+    // 2 processos → remaining_count=2 → isLastBlock=true → aceita 1..2 ações
+    global.__mockActionsScores = [
+      { process_key: 'OPERACOES', band: 'LOW', score_numeric: 2 },
+      { process_key: 'COMERCIAL', band: 'LOW', score_numeric: 2 },
+    ];
+    global.__mockActionsAnswers = [
+      { process_key: 'OPERACOES', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'OPERACOES', question_key: 'Q02', answer_value: 1 },
+      { process_key: 'COMERCIAL', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'COMERCIAL', question_key: 'Q02', answer_value: 1 },
+    ];
+
+    const res = await request(app)
+      .post(`/full/cycle/select-actions?company_id=${COMPANY_ID}`)
+      .set('Authorization', 'Bearer test-token')
+      .send({
+        assessment_id: ASSESSMENT_ID,
+        company_id: COMPANY_ID,
+        actions: [
+          { action_key: 'COMERCIAL_ACAO_PADRONIZAR_FUNIL', owner_name: 'João', metric_text: 'Conversão', checkpoint_date: '2025-03-15', position: 1 },
+          { action_key: 'OPERACOES_ACAO_MAPEAR_ENTREGA', owner_name: 'Maria', metric_text: 'Entregas', checkpoint_date: '2025-03-20', position: 2 },
+        ],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+  });
+
+  it('retorna 400 ACTION_COUNT_INVALID em bloco intermediário com 2 ações (remaining=4)', async () => {
+    // 4 processos → remaining_count=4 → isLastBlock=false → exige exatamente 3
+    global.__mockActionsScores = [
+      { process_key: 'OPERACOES', band: 'LOW', score_numeric: 2 },
+      { process_key: 'COMERCIAL', band: 'LOW', score_numeric: 2 },
+      { process_key: 'ADM_FIN', band: 'LOW', score_numeric: 2 },
+      { process_key: 'GESTAO', band: 'LOW', score_numeric: 2 },
+    ];
+    global.__mockActionsAnswers = [
+      { process_key: 'OPERACOES', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'OPERACOES', question_key: 'Q02', answer_value: 1 },
+      { process_key: 'COMERCIAL', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'COMERCIAL', question_key: 'Q02', answer_value: 1 },
+      { process_key: 'ADM_FIN', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'ADM_FIN', question_key: 'Q02', answer_value: 1 },
+      { process_key: 'GESTAO', question_key: 'Q01', answer_value: 0 },
+      { process_key: 'GESTAO', question_key: 'Q02', answer_value: 1 },
+    ];
+
+    const res = await request(app)
+      .post(`/full/cycle/select-actions?company_id=${COMPANY_ID}`)
+      .set('Authorization', 'Bearer test-token')
+      .send({
+        assessment_id: ASSESSMENT_ID,
+        company_id: COMPANY_ID,
+        actions: [
+          { action_key: 'COMERCIAL_ACAO_PADRONIZAR_FUNIL', owner_name: 'João', metric_text: 'Conversão', checkpoint_date: '2025-03-15', position: 1 },
+          { action_key: 'OPERACOES_ACAO_MAPEAR_ENTREGA', owner_name: 'Maria', metric_text: 'Entregas', checkpoint_date: '2025-03-20', position: 2 },
+        ],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('ACTION_COUNT_INVALID');
+    expect(res.body.message_user).toContain('3');
   });
 });

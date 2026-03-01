@@ -26,6 +26,16 @@ const USERS = [
   { email: 'admin@fca.com', role: 'ADMIN' },
 ];
 
+async function ensureUserProfile(supabase, userId, email, role) {
+  const { error } = await supabase.from('user_profiles').upsert(
+    { user_id: userId, email: (email || '').toLowerCase(), role, updated_at: new Date().toISOString() },
+    { onConflict: 'user_id' }
+  );
+  if (error) {
+    console.warn(`${email}: user_profiles upsert falhou - ${error.message} (migration 034?)`);
+  }
+}
+
 async function ensureUser(supabase, { email, role }) {
   const { data: { users }, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   if (listErr) {
@@ -42,12 +52,13 @@ async function ensureUser(supabase, { email, role }) {
       console.log(`${email}: ERRO ao atualizar - ${updateErr.message}`);
       return 'ERROR';
     }
+    await ensureUserProfile(supabase, existing.id, existing.email || email, role);
     const hadRole = existing.app_metadata?.role === role;
     console.log(`${email}: ${hadRole ? 'OK' : 'UPDATED'} (role=${role}, senha=senha123)`);
     return hadRole ? 'OK' : 'UPDATED';
   }
 
-  const { error: createErr } = await supabase.auth.admin.createUser({
+  const { data: createData, error: createErr } = await supabase.auth.admin.createUser({
     email,
     password: TEST_PASSWORD,
     email_confirm: true,
@@ -56,6 +67,9 @@ async function ensureUser(supabase, { email, role }) {
   if (createErr) {
     console.log(`${email}: ERRO ao criar - ${createErr.message}`);
     return 'ERROR';
+  }
+  if (createData?.user) {
+    await ensureUserProfile(supabase, createData.user.id, createData.user.email || email, role);
   }
   console.log(`${email}: CREATED (role=${role}, senha=senha123)`);
   return 'CREATED';

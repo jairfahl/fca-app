@@ -9,6 +9,7 @@ import { apiFetch, ApiError } from '@/lib/api';
 import { Entitlement, getEntitlement } from '@/lib/entitlement';
 import { assertFullAccess } from '@/lib/fullGuard';
 import { AssinarFullButton } from '@/components/AssinarFullButton';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
 import { labels } from '@/lib/uiCopy';
 import {
   type ProcessKey,
@@ -328,13 +329,16 @@ function ResultsContent() {
           Escolher ações (Light)
         </Link>
         {resultsCompanyId && (
-          <AssinarFullButton
-            companyId={resultsCompanyId}
-            entitlement={entitlement}
-            accessToken={session?.access_token ?? null}
-            userEmail={user?.email}
-            variant="secondary"
-          />
+          <>
+            <PedirAjudaConsultor companyId={resultsCompanyId} />
+            <AssinarFullButton
+              companyId={resultsCompanyId}
+              entitlement={entitlement}
+              accessToken={session?.access_token ?? null}
+              userEmail={user?.email}
+              variant="secondary"
+            />
+          </>
         )}
         {assessment.status !== 'COMPLETED' && (
           <Link

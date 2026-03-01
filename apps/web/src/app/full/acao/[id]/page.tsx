@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/auth';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { humanizeActionStatus, labels } from '@/lib/uiCopy';
+import PedirApoioButton from '@/components/PedirApoioButton';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
 
 function displayActionTitle(title: string): string {
   return title?.includes('Ação padrão') ? labels.fallbackAction : title || labels.fallbackAction;
@@ -26,6 +28,7 @@ type DashboardAction = {
   before_baseline: string | null;
   after_result: string | null;
   declared_gain: string | null;
+  cause_label?: string | null;
 };
 
 export default function FullAcaoPage() {
@@ -182,6 +185,20 @@ function FullAcaoContent() {
       {(state === 'ready' || state === 'saving') && action && (
         <>
           <h1 style={{ marginTop: 0 }}>{displayActionTitle(action.title)}</h1>
+          {companyId && (
+            <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <PedirAjudaConsultor companyId={companyId} />
+              {assessmentId && (
+                <PedirApoioButton
+                  companyId={companyId}
+                  assessmentId={assessmentId}
+                  actionId={action.action_key}
+                  actionTitle={displayActionTitle(action.title)}
+                  label="Pedir apoio do consultor"
+                />
+              )}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
             <div><strong>Dono:</strong> {action.owner_name}</div>
             <div><strong>Métrica:</strong> {action.metric_text}</div>

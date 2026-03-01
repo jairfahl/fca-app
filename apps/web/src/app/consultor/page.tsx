@@ -7,10 +7,22 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
 import { humanizeStatus } from '@/lib/uiCopy';
+import { ConsultorBreadcrumb } from '@/components/ConsultorBreadcrumb';
+import {
+  consultantHome,
+  consultantCompanies,
+  consultantMessages,
+  consultantCompanyOverview,
+  consultantUser,
+  resolveCompanyId,
+  isCompanyIdValid,
+} from '@/lib/consultorRoutes';
 
 interface CompanyItem {
   company_id: string;
+  company_name?: string | null;
   name: string | null;
+  trade_name?: string | null;
   owner_user_id: string | null;
   created_at: string | null;
   entitlement: string;
@@ -41,6 +53,15 @@ interface ConsultingRequest {
   updated_at: string;
 }
 
+interface UserItem {
+  user_id: string;
+  email: string | null;
+  role: string | null;
+  company_id: string | null;
+  company_name: string | null;
+  companies_count: number;
+}
+
 export default function ConsultorPage() {
   return (
     <ProtectedRoute>
@@ -55,13 +76,15 @@ function ConsultorContent() {
   const { user, session } = useAuth();
   const router = useRouter();
 
-  const [tab, setTab] = useState<'empresas' | 'apoio'>('empresas');
+  const [tab, setTab] = useState<'empresas' | 'usuarios' | 'apoio'>('empresas');
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
   const [helpRequests, setHelpRequests] = useState<HelpRequest[]>([]);
   const [supportRequests, setSupportRequests] = useState<ConsultingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [searchUsers, setSearchUsers] = useState('');
   const [closingId, setClosingId] = useState<string | null>(null);
   const [patchingId, setPatchingId] = useState<string | null>(null);
   const [supportStatusFilter, setSupportStatusFilter] = useState<'OPEN' | 'IN_PROGRESS' | 'CLOSED'>('OPEN');
@@ -78,13 +101,15 @@ function ConsultorContent() {
     setLoading(true);
     setError('');
     try {
-      const [companiesRes, helpRes, supportRes] = await Promise.all([
+      const [companiesRes, usersRes, helpRes, supportRes] = await Promise.all([
         apiFetch('/consultor/companies', {}, token),
+        apiFetch('/consultor/users', {}, token),
         apiFetch('/consultor/help-requests?status=OPEN', {}, token),
         apiFetch('/consultor/support/requests?status=OPEN', {}, token),
       ]);
       if (!mountedRef.current) return;
       setCompanies(companiesRes?.companies || []);
+      setUsers(usersRes?.users || []);
       setHelpRequests(helpRes?.help_requests || []);
       setSupportRequests(supportRes?.requests || []);
     } catch (err: unknown) {
@@ -149,12 +174,27 @@ function ConsultorContent() {
     }
   };
 
-  const companyMap = Object.fromEntries(companies.map((c) => [c.company_id, c.name]));
+  const companyMap = Object.fromEntries(
+    companies
+      .map((c) => {
+        const cid = resolveCompanyId(c);
+        return cid ? [cid, c.company_name ?? c.name ?? cid] : null;
+      })
+      .filter(Boolean) as [string, string][]
+  );
   const filtered = companies.filter(
     (c) =>
       !search ||
-      (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.company_id || '').toLowerCase().includes(search.toLowerCase())
+      ((c.company_name ?? c.name) || '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.trade_name || '').toLowerCase().includes(search.toLowerCase()) ||
+      (resolveCompanyId(c) || '').toLowerCase().includes(search.toLowerCase())
+  );
+  const filteredUsers = users.filter(
+    (u) =>
+      !searchUsers ||
+      (u.email || '').toLowerCase().includes(searchUsers.toLowerCase()) ||
+      (u.company_name || '').toLowerCase().includes(searchUsers.toLowerCase()) ||
+      (u.user_id || '').toLowerCase().includes(searchUsers.toLowerCase())
   );
 
   const kpis = {
@@ -175,6 +215,7 @@ function ConsultorContent() {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '1000px', margin: '0 auto' }}>
+      <ConsultorBreadcrumb items={[{ label: 'Consultor' }]} />
       <header style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ margin: 0, fontSize: '1.5rem' }}>Painel do consultor</h1>
@@ -192,7 +233,7 @@ function ConsultorContent() {
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' }}>
         <Link
-          href="/consultor/companies"
+          href={consultantCompanies()}
           style={{
             padding: '1.5rem',
             backgroundColor: '#e7f3ff',
@@ -207,7 +248,7 @@ function ConsultorContent() {
           <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#0d6efd' }}>Ver empresa →</div>
         </Link>
         <Link
-          href="/consultor/messages"
+          href={consultantMessages()}
           style={{
             padding: '1.5rem',
             backgroundColor: '#f8f9fa',
@@ -271,6 +312,20 @@ function ConsultorContent() {
           Empresas
         </button>
         <button
+          onClick={() => setTab('usuarios')}
+          style={{
+            padding: '0.5rem 1rem',
+            border: 'none',
+            background: tab === 'usuarios' ? '#0d6efd' : 'transparent',
+            color: tab === 'usuarios' ? '#fff' : '#212529',
+            cursor: 'pointer',
+            borderRadius: '6px 6px 0 0',
+            fontSize: '0.9rem',
+          }}
+        >
+          Usuários
+        </button>
+        <button
           onClick={() => setTab('apoio')}
           style={{
             padding: '0.5rem 1rem',
@@ -282,9 +337,70 @@ function ConsultorContent() {
             fontSize: '0.9rem',
           }}
         >
-          Pedidos de apoio
+          Pedidos de ajuda
         </button>
       </div>
+
+      {tab === 'usuarios' && (
+        <>
+          <h2 style={{ marginBottom: '1rem', fontSize: '1.1rem' }}>Usuários</h2>
+          <input
+            type="text"
+            placeholder="Buscar por email ou empresa..."
+            value={searchUsers}
+            onChange={(e) => setSearchUsers(e.target.value)}
+            style={{
+              width: '100%',
+              maxWidth: '400px',
+              padding: '0.5rem 0.75rem',
+              marginBottom: '1rem',
+              borderRadius: '6px',
+              border: '1px solid #ced4da',
+            }}
+          />
+          {filteredUsers.length === 0 ? (
+            <div style={{ padding: '1rem', backgroundColor: '#f8f9fa', borderRadius: '8px', color: '#6c757d' }}>
+              <p style={{ marginBottom: '0.5rem' }}>
+                {users.length === 0 ? '0 usuários retornados pela API' : 'Nenhum usuário encontrado (filtro aplicado).'}
+              </p>
+            </div>
+          ) : (
+            <div style={{ border: '1px solid #dee2e6', borderRadius: '8px', overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                <thead>
+                  <tr style={{ backgroundColor: '#f8f9fa' }}>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Email</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}>Empresa</th>
+                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left', borderBottom: '1px solid #dee2e6' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((u) => (
+                    <tr key={u.user_id} style={{ borderBottom: '1px solid #eee' }}>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        <strong>{u.email || '—'}</strong>
+                      </td>
+                      <td style={{ padding: '0.75rem 1rem' }}>{u.company_name || u.company_id || '—'}</td>
+                      <td style={{ padding: '0.75rem 1rem' }}>
+                        {u.company_id ? (
+                          <Link
+                            href={consultantUser(u.company_id, u.user_id)}
+                            style={{ color: '#0d6efd', textDecoration: 'none', fontSize: '0.9rem' }}
+                          >
+                            Ver usuário →
+                          </Link>
+                        ) : (
+                          <span style={{ color: '#6c757d', fontSize: '0.85rem' }}>Sem empresa</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
 
       {tab === 'empresas' && (
       <>
@@ -338,24 +454,34 @@ function ConsultorContent() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((c) => (
-                <tr key={c.company_id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <strong>{c.name || c.company_id}</strong>
-                  </td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{c.entitlement}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{humanizeStatus(c.full_status)}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>{c.plan_progress || '—'}</td>
-                  <td style={{ padding: '0.75rem 1rem' }}>
-                    <Link
-                      href={`/consultor/company/${c.company_id}`}
-                      style={{ color: '#0d6efd', textDecoration: 'none', fontSize: '0.9rem' }}
-                    >
-                      Ver detalhes →
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((c) => {
+                const cid = resolveCompanyId(c);
+                const overviewHref = consultantCompanyOverview(cid);
+                return (
+                  <tr key={cid ?? c.company_id ?? 'row'} style={{ borderBottom: '1px solid #eee' }}>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      <strong>{c.company_name ?? c.trade_name ?? c.name ?? cid ?? '—'}</strong>
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem' }}>{c.entitlement}</td>
+                    <td style={{ padding: '0.75rem 1rem' }}>{humanizeStatus(c.full_status)}</td>
+                    <td style={{ padding: '0.75rem 1rem' }}>{c.plan_progress || '—'}</td>
+                    <td style={{ padding: '0.75rem 1rem' }}>
+                      {isCompanyIdValid(cid) && overviewHref !== '#' ? (
+                        <Link
+                          href={overviewHref}
+                          style={{ color: '#0d6efd', textDecoration: 'none', fontSize: '0.9rem' }}
+                        >
+                          Ver detalhes →
+                        </Link>
+                      ) : (
+                        <span style={{ color: '#6c757d', fontSize: '0.85rem' }} title="Empresa inválida (sem id)">
+                          Empresa inválida
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -381,12 +507,18 @@ function ConsultorContent() {
                 </div>
                 <div style={{ marginBottom: '0.75rem' }}>{r.context}</div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                  <Link
-                    href={`/consultor/company/${r.company_id}`}
-                    style={{ color: '#0d6efd', fontSize: '0.9rem' }}
-                  >
-                    Ver empresa
-                  </Link>
+                  {isCompanyIdValid(r.company_id) && consultantCompanyOverview(r.company_id) !== '#' ? (
+                    <Link
+                      href={consultantCompanyOverview(r.company_id)}
+                      style={{ color: '#0d6efd', fontSize: '0.9rem' }}
+                    >
+                      Ver empresa
+                    </Link>
+                  ) : (
+                    <span style={{ color: '#6c757d', fontSize: '0.85rem' }} title="Empresa inválida (sem id)">
+                      Empresa inválida
+                    </span>
+                  )}
                   <button
                     onClick={() => handleCloseRequest(r.id)}
                     disabled={closingId === r.id}
@@ -455,12 +587,18 @@ function ConsultorContent() {
                   </div>
                   <div style={{ marginBottom: '1rem', whiteSpace: 'pre-wrap' }}>{r.text}</div>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Link
-                      href={`/consultor/company/${r.company_id}`}
-                      style={{ color: '#0d6efd', fontSize: '0.9rem' }}
-                    >
-                      Ver empresa
-                    </Link>
+                    {isCompanyIdValid(r.company_id) && consultantCompanyOverview(r.company_id) !== '#' ? (
+                      <Link
+                        href={consultantCompanyOverview(r.company_id)}
+                        style={{ color: '#0d6efd', fontSize: '0.9rem' }}
+                      >
+                        Ver empresa
+                      </Link>
+                    ) : (
+                      <span style={{ color: '#6c757d', fontSize: '0.85rem' }} title="Empresa inválida (sem id)">
+                        Empresa inválida
+                      </span>
+                    )}
                     {supportStatusFilter === 'OPEN' && (
                       <button
                         onClick={() => handlePatchStatus(r.id, 'IN_PROGRESS')}

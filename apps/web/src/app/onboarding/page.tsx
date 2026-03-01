@@ -24,6 +24,7 @@ function OnboardingContent() {
   const [segment, setSegment] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [lgpd_accepted, setLgpdAccepted] = useState(false);
   // Trava anti-loop: useRef não causa re-render, então não dispara novo effect
   const hasCheckedRef = useRef(false);
 
@@ -100,7 +101,7 @@ function OnboardingContent() {
         '/companies',
         {
           method: 'POST',
-          body: { name: name.trim(), segment },
+          body: { name: name.trim(), segment, lgpd_accepted: true },
         },
         session.access_token
       );
@@ -182,6 +183,18 @@ function OnboardingContent() {
           </select>
         </div>
 
+        <div style={{ marginBottom: '1.5rem' }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={lgpd_accepted}
+              onChange={(e) => setLgpdAccepted(e.target.checked)}
+              style={{ marginTop: '2px', cursor: 'pointer' }}
+            />
+            <span>Li e aceito a Política de Privacidade do FCA-MTR</span>
+          </label>
+        </div>
+
         {error && (
           <div style={{
             color: '#d32f2f',
@@ -196,17 +209,17 @@ function OnboardingContent() {
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !lgpd_accepted}
           style={{
             width: '100%',
             padding: '0.75rem',
-            backgroundColor: saving ? '#ccc' : '#0070f3',
+            backgroundColor: (saving || !lgpd_accepted) ? '#ccc' : '#0070f3',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
             fontSize: '1rem',
             fontWeight: 'bold',
-            cursor: saving ? 'not-allowed' : 'pointer',
+            cursor: (saving || !lgpd_accepted) ? 'not-allowed' : 'pointer',
           }}
         >
           {saving ? 'Salvando...' : 'Continuar'}

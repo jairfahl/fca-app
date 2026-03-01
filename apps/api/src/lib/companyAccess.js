@@ -1,5 +1,6 @@
 /**
- * Helpers de acesso a company: owner, consultant (entitlement FULL/ACTIVE) ou admin.
+ * Helpers de acesso a company: owner, consultant (role CONSULTOR/ADMIN ou entitlement FULL/ACTIVE) ou admin.
+ * Role vem do JWT (app_metadata.role). CONSULTOR e ADMIN podem acessar qualquer company_id.
  */
 const { supabase } = require('./supabase');
 const ADMIN_EMAIL = 'admin@fca.com';
@@ -24,7 +25,24 @@ async function ensureCompanyAccess(userId, companyId) {
   return data;
 }
 
-async function ensureConsultantOrOwnerAccess(userId, companyId, userEmailFromJwt = null) {
+/**
+ * @param {string} userId
+ * @param {string} companyId
+ * @param {string|null} userEmailFromJwt
+ * @param {string} [userRole] - USER | CONSULTOR | ADMIN (do JWT). CONSULTOR/ADMIN acessam qualquer company.
+ */
+async function ensureConsultantOrOwnerAccess(userId, companyId, userEmailFromJwt = null, userRole = 'USER') {
+  // Role CONSULTOR ou ADMIN: acesso transversal a qualquer empresa
+  if (userRole === 'CONSULTOR' || userRole === 'ADMIN') {
+    const { data: company } = await supabase
+      .schema('public')
+      .from('companies')
+      .select('id, name, segment')
+      .eq('id', companyId)
+      .maybeSingle();
+    return company;
+  }
+
   const owner = await ensureCompanyAccess(userId, companyId);
   if (owner) return owner;
 

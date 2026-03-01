@@ -2,6 +2,10 @@
 
 **Objetivo:** Documentar perguntas, lógica de classificação e ações sugeridas para os 3 gaps prioritários do MVP.
 
+**Fonte canônica:** `catalogs/full/cause_engine.v1.json`. Tabelas consolidadas em `docs/QUESTIONS_CATALOG.md`.
+
+**Coerência (Prompt 7):** Recomendações só aparecem quando há match de catálogo + evidência nas respostas. Fallbacks são marcados `is_gap_content: true` e não exibidos para USER; consultor vê com badge "Conteúdo em definição". Cada recomendação inclui `evidence_keys` (respostas que sustentam).
+
 ---
 
 ## 1. Gaps do MVP

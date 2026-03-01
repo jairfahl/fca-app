@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
+const { blockConsultorOnMutation } = require('../middleware/requireRole');
 
 /**
  * POST /assessments/light
  * Inicia um diagnóstico LIGHT (status = DRAFT) para uma company do usuário
  */
-router.post('/light', requireAuth, async (req, res) => {
+router.post('/light', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const { company_id } = req.body;
 
@@ -78,7 +79,7 @@ router.post('/light', requireAuth, async (req, res) => {
  * POST /assessments/:id/light/submit
  * Submete diagnóstico LIGHT: persiste itens, calcula scores e marca como COMPLETED
  */
-router.post('/:id/light/submit', requireAuth, async (req, res) => {
+router.post('/:id/light/submit', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const { items } = req.body;

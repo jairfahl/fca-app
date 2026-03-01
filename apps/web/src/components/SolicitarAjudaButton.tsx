@@ -10,7 +10,7 @@ interface SolicitarAjudaButtonProps {
   style?: React.CSSProperties;
 }
 
-/** Botão "Solicitar ajuda" — USER cria pedido auditável (POST /help-requests) */
+/** Botão "Solicitar ajuda" — USER envia mensagem (POST /messages). Consultor vê em /consultor/user/[id] — Mensagens. */
 export default function SolicitarAjudaButton({ companyId, label = 'Solicitar ajuda', style }: SolicitarAjudaButtonProps) {
   const { session } = useAuth();
   const [open, setOpen] = useState(false);
@@ -25,9 +25,9 @@ export default function SolicitarAjudaButton({ companyId, label = 'Solicitar aju
     setLoading(true);
     setError('');
     try {
-      await apiFetch('/help-requests', {
+      await apiFetch('/messages', {
         method: 'POST',
-        body: { company_id: companyId, context: context.trim() },
+        body: { company_id: companyId, body: context.trim() },
       }, session.access_token);
       setSent(true);
       setContext('');

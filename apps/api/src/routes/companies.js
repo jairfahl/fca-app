@@ -11,7 +11,7 @@ const VALID_SEGMENTS = ['SERVICOS', 'COMERCIO', 'INDUSTRIA'];
  */
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { name, segment } = req.body;
+    const { name, segment, lgpd_accepted } = req.body;
 
     // Validações
     if (!name || typeof name !== 'string' || name.trim().length === 0) {
@@ -22,13 +22,18 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'segment é obrigatório e deve ser: SERVICOS, COMERCIO ou INDUSTRIA' });
     }
 
+    if (lgpd_accepted !== true) {
+      return res.status(400).json({ error: 'É necessário aceitar a Política de Privacidade para continuar.' });
+    }
+
     // Inserir company com owner_user_id do usuário autenticado
     const { data, error } = await supabase
       .from('companies')
       .insert({
         name: name.trim(),
         segment: segment,
-        owner_user_id: req.user.id
+        owner_user_id: req.user.id,
+        lgpd_accepted_at: new Date().toISOString(),
       })
       .select()
       .single();

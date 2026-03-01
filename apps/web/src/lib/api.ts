@@ -18,6 +18,7 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   DROP_REASON_REQUIRED: 'Ao descartar uma ação, informe o motivo.',
   CYCLE_CLOSED: 'Ciclo fechado. Somente leitura.',
   CONSULTOR_READ_ONLY: 'Consultor não preenche diagnóstico. Use o painel de consultor.',
+  CONSULTOR_NOT_ALLOWED: 'Acesso de consultor é pelo painel do consultor.',
 };
 
 export class ApiError extends Error {
@@ -134,19 +135,36 @@ export interface MeResponse {
 }
 
 /** In-flight dedupe: evita múltiplos /me simultâneos para o mesmo token */
-let _inFlight: { token: string; promise: Promise<MeResponse> } | null = null;
+let _inFlight: { token: string; promise: Promise<MeResponse | null> } | null = null;
 
-/** Busca dados do usuário autenticado (incluindo role). Deduplicado por token. */
-export async function fetchMe(accessToken: string): Promise<MeResponse> {
+/**
+ * Busca dados do usuário autenticado (incluindo role).
+ * Se 401: retorna null (fluxo de login age).
+ * Deduplicado por token.
+ */
+export async function fetchMe(accessToken: string): Promise<MeResponse | null> {
   if (_inFlight?.token === accessToken) {
     return _inFlight.promise;
   }
-  _inFlight = { token: accessToken, promise: apiFetch('/me', {}, accessToken) };
+  const url = `${API_BASE_URL}/me`;
+  const promise = (async (): Promise<MeResponse | null> => {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 401) {
+      return null;
+    }
+    if (!res.ok) {
+      return null;
+    }
+    const data = await res.json().catch(() => null);
+    return data as MeResponse;
+  })();
+  _inFlight = { token: accessToken, promise };
   try {
-    const result = await _inFlight.promise;
-    if (typeof window !== 'undefined') {
-      const n = ((window as any).__dbgMeCount = ((window as any).__dbgMeCount || 0) + 1);
-      console.log(`[ME_FETCH] count=${n} role=${result?.role}`);
+    const result = await promise;
+    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+      console.log(`[ME_FETCH] role=${result?.role ?? 'null'}`);
     }
     return result;
   } finally {

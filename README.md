@@ -179,7 +179,7 @@ As migrações estão localizadas em `db/migrations/`:
 
 ### Papéis (USER / CONSULTOR / ADMIN)
 - **USER**: vê apenas sua empresa e diagnósticos. Botão "Solicitar ajuda" (abre pedido auditável).
-- **CONSULTOR**: acesso transversal — `/full/consultor` (home), lista empresas, abre qualquer `company_id`, vê histórico FULL, ações, evidências, relatórios. Pode registrar notas por ação.
+- **CONSULTOR**: acesso transversal — `/consultor` (home), lista empresas, abre qualquer `company_id`, vê histórico FULL, ações, evidências, relatórios. Pode registrar notas por ação.
 - **ADMIN**: mesmo que CONSULTOR + pode ativar modo teste.
 
 Credenciais de teste: USER `fca@fca.com`, CONSULTOR `consultor@fca.com`, ADMIN `admin@fca.com` (senha: `senha123`). Role em `app_metadata.role` (JWT). Ver `scripts/set-user-roles.js` e `docs/roles.md`.
@@ -195,7 +195,7 @@ Credenciais de teste: USER `fca@fca.com`, CONSULTOR `consultor@fca.com`, ADMIN `
 - `/full/relatorio?company_id=&full_version=`: Gerar/baixar relatório PDF
 - `/full/historico?company_id=`: Histórico de versões FULL
 - `/full/comparar?company_id=&from=&to=`: Comparação entre versões
-- `/full/consultor`: Área do consultor (CONSULTOR/ADMIN) — lista empresas, selecionar empresa, ver histórico/ações/relatórios
+- `/consultor`: Área do consultor (CONSULTOR/ADMIN) — home, lista empresas, overview por empresa (`/consultor/company/[id]/overview`), histórico, relatórios. `/full/consultor` redireciona para `/consultor`.
 
 ## Endpoints Backend (Express)
 
@@ -379,6 +379,8 @@ Todas as tabelas possuem RLS habilitado:
 - `docs/LIGHT_PLANS_API.md`: Contrato da API de planos Light (status, read, create idempotente)
 - `docs/FULL_MODULE_SCHEMA.md`: Schema do módulo FULL (tabelas, migrations)
 - `docs/FULL_QUESTION_BANK_API.md`: Contrato da API de catálogo e perguntas FULL
+- `docs/QUESTIONS_CATALOG.md`: Tabelas de perguntas LIGHT (12), FULL (48), causa raiz (12)
+- `docs/CONSULTOR_NAV_AUDIT.md`: Rotas e navegação do módulo consultor
 - `catalogs/full/README.md`: Catálogo canônico FULL (processes, questions, recommendations, actions)
 
 ## Desenvolvimento

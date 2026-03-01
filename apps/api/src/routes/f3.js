@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
+const { blockConsultorOnMutation } = require('../middleware/requireRole');
 
 /**
  * Helper: Validar ownership de assessment
@@ -314,7 +315,7 @@ async function generateTop10Recommendations(assessmentId) {
  * GET /assessments/:id/recommendations
  * Retorna Top 10 recomendações do assessment (gera se não existir)
  */
-router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => {
+router.get('/assessments/:id/recommendations', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const assessmentId = req.params.id;
 
@@ -542,7 +543,7 @@ router.get('/assessments/:id/recommendations', requireAuth, async (req, res) => 
  * POST /assessments/:id/free-actions/select
  * Seleciona uma recomendação como ação gratuita
  */
-router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res) => {
+router.post('/assessments/:id/free-actions/select', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const assessmentId = req.params.id;
     const { recommendation_id } = req.body;
@@ -643,7 +644,7 @@ router.post('/assessments/:id/free-actions/select', requireAuth, async (req, res
  * Adiciona evidência textual a uma ação gratuita (write-once)
  * Usa assessment_free_action_evidences como fonte de verdade
  */
-router.post('/free-actions/:id/evidence', requireAuth, async (req, res) => {
+router.post('/free-actions/:id/evidence', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const freeActionId = req.params.id;
     const { evidence_text, declared_gain_type, declared_gain_note, done_criteria_json } = req.body;
@@ -759,7 +760,7 @@ router.post('/free-actions/:id/evidence', requireAuth, async (req, res) => {
  * GET /free-actions/:id
  * Retorna ação gratuita com recomendação e evidência
  */
-router.get('/free-actions/:id', requireAuth, async (req, res) => {
+router.get('/free-actions/:id', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const freeActionId = req.params.id;
 
@@ -845,7 +846,7 @@ router.get('/free-actions/:id', requireAuth, async (req, res) => {
  * GET /light/plans/status?assessment_id=&company_id=
  * Status agregado dos 4 planos (mapa por processo)
  */
-router.get('/light/plans/status', requireAuth, async (req, res) => {
+router.get('/light/plans/status', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const assessmentId = req.query.assessment_id;
     const companyId = req.query.company_id;
@@ -924,7 +925,7 @@ router.get('/light/plans/status', requireAuth, async (req, res) => {
  * GET /light/plans/:processKey/status?assessment_id=&company_id=
  * Status do plano por processo (existe?, plan_id, completed, updated_at)
  */
-router.get('/light/plans/:processKey/status', requireAuth, async (req, res) => {
+router.get('/light/plans/:processKey/status', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const processKey = req.params.processKey;
     const assessmentId = req.query.assessment_id;
@@ -1000,7 +1001,7 @@ router.get('/light/plans/:processKey/status', requireAuth, async (req, res) => {
  * GET /light/plans/:processKey?assessment_id=&company_id=
  * Retorna o plano salvo para o processo (free_action + light_action_plan)
  */
-router.get('/light/plans/:processKey', requireAuth, async (req, res) => {
+router.get('/light/plans/:processKey', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const processKey = req.params.processKey;
     const assessmentId = req.query.assessment_id;
@@ -1089,7 +1090,7 @@ router.get('/light/plans/:processKey', requireAuth, async (req, res) => {
  * GET /light/plans?assessment_id=&company_id=
  * Retorna planos LITE do usuário (com status de progresso/evidência)
  */
-router.get('/light/plans', requireAuth, async (req, res) => {
+router.get('/light/plans', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const assessmentId = req.query.assessment_id;
     const companyId = req.query.company_id;
@@ -1135,7 +1136,7 @@ router.get('/light/plans', requireAuth, async (req, res) => {
  * POST /light/plans
  * Cria/atualiza plano 30d (permitido apenas antes da evidência)
  */
-router.post('/light/plans', requireAuth, async (req, res) => {
+router.post('/light/plans', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const {
       assessment_id,
@@ -1309,7 +1310,7 @@ router.post('/light/plans', requireAuth, async (req, res) => {
  * POST /light/progress
  * Registra progresso declarado (write-once)
  */
-router.post('/light/progress', requireAuth, async (req, res) => {
+router.post('/light/progress', requireAuth, blockConsultorOnMutation, async (req, res) => {
   try {
     const { free_action_id, done_criteria_json, declared_gain_type, declared_gain_note } = req.body || {};
 

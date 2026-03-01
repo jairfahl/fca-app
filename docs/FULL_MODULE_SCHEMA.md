@@ -55,14 +55,26 @@ Arquivo: `db/migrations/014_full_module_schema.sql`
 | 025 | `full_gap_instances_status.sql` | status CAUSE_PENDING / CAUSE_CLASSIFIED em full_gap_instances |
 | 026 | `full_value_events.sql` | Eventos de valor |
 
+### 027–029 — Relatórios e Versionamento
+
+| Migração | Arquivo | Descrição |
+|----------|---------|-----------|
+| 027 | `027_full_versioning.sql` | full_version, parent_full_assessment_id, closed_at em full_assessments |
+| 028 | `028_full_diagnostic_snapshot.sql` | Snapshot por versão (processes, raios_x, plan, evidence_summary) |
+| 029 | `029_full_reports.sql` | Relatórios PDF (status PENDING/READY/FAILED) |
+
+Ver `docs/FULL_REPORTS_SCHEMA.md` para schema e `docs/FULL_REPORTS_API.md` para endpoints REST.
+
 ### Constraints principais
 
-- **full_assessments:** 1 DRAFT/SUBMITTED por company (índice parcial único)
+- **full_assessments:** 1 DRAFT/SUBMITTED por company (índice parcial único); (company_id, full_version) único
 - **full_answers:** UNIQUE (assessment_id, process_key, question_key)
 - **full_process_scores:** UNIQUE (assessment_id, process_key)
 - **full_findings:** UNIQUE (assessment_id, finding_type, position)
 - **full_selected_actions:** UNIQUE (assessment_id, action_key), UNIQUE (assessment_id, position)
 - **full_action_evidence:** UNIQUE (assessment_id, action_key) — write-once
+- **full_diagnostic_snapshot:** UNIQUE (full_assessment_id)
+- **full_reports:** UNIQUE (company_id, full_assessment_id)
 
 ### RLS
 
@@ -74,11 +86,14 @@ Arquivo: `db/migrations/014_full_module_schema.sql`
 | Arquivo | Descrição |
 |---------|-----------|
 | `processes.json` | Processos com microvalor (protects, owner_alert, typical_impact) |
-| `questions.json` | Perguntas por processo (dimension, segment_applicability) |
+| `questions.json` | Perguntas por processo (12 por processo, 48 total; dimension, segment_applicability) |
 | `recommendations.json` | Recomendações por banda (LOW/MEDIUM/HIGH) |
 | `actions.json` | Ações por banda (title, benefit_text, metric_hint, dod_checklist) |
+| `cause_engine.v1.json` | Motor de causa raiz: gaps, perguntas LIKERT_5, regras SCORE_WEIGHTS |
 
-Seed determinístico: `npm run db:seed:full`
+Seed determinístico: `npm run db:seed:full` (processos, perguntas, recomendações, ações); `010_seed_full_cause_mvp.sql` (causa raiz).
+
+Ver `docs/QUESTIONS_CATALOG.md` para tabelas completas de perguntas.
 
 ## Aplicar migração
 

@@ -1,9 +1,10 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from './supabaseClient';
-import { fetchMe, type MeResponse } from './api';
+import { getMe, invalidateMe } from './me';
+import type { MeResponse } from './api';
 
 interface AuthContextType {
   user: User | null;
@@ -11,6 +12,8 @@ interface AuthContextType {
   loading: boolean;
   me: MeResponse | null;
   meLoading: boolean;
+  meError: string | null;
+  loadMe: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -19,6 +22,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   me: null,
   meLoading: false,
+  meError: null,
+  loadMe: async () => {},
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -27,9 +32,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<MeResponse | null>(null);
   const [meLoading, setMeLoading] = useState(false);
+  const [meError, setMeError] = useState<string | null>(null);
 
-  const lastTokenRef = useRef<string | null>(null);
-  const inFlightRef = useRef<{ token: string; promise: Promise<MeResponse> } | null>(null);
+  const loadMeInProgressRef = useRef(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -44,62 +49,55 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      if (!session) {
+        invalidateMe();
+        setMe(null);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
+  const loadMe = useCallback(async () => {
     const token = session?.access_token ?? null;
     if (!token) {
       setMe(null);
       setMeLoading(false);
-      lastTokenRef.current = null;
-      inFlightRef.current = null;
+      setMeError(null);
       return;
     }
 
-    if (lastTokenRef.current === token && me) {
-      return;
-    }
-
-    if (inFlightRef.current?.token === token) {
-      inFlightRef.current.promise
-        .then((data) => {
-          lastTokenRef.current = token;
-          setMe(data);
-        })
-        .catch(() => {})
-        .finally(() => {
-          if (inFlightRef.current?.token === token) {
-            inFlightRef.current = null;
-            setMeLoading(false);
-          }
-        });
-      return;
-    }
-
+    if (loadMeInProgressRef.current) return;
+    loadMeInProgressRef.current = true;
     setMeLoading(true);
-    const promise = fetchMe(token);
-    inFlightRef.current = { token, promise };
-    promise
-      .then((data) => {
-        lastTokenRef.current = token;
-        setMe(data);
-      })
-      .catch(() => {
-        setMe(null);
-      })
-      .finally(() => {
-        if (inFlightRef.current?.token === token) {
-          inFlightRef.current = null;
-        }
-        setMeLoading(false);
-      });
+    setMeError(null);
+
+    try {
+      const data = await getMe(token);
+      setMe(data);
+      if (!data) {
+        setMeError('Não foi possível carregar perfil');
+      }
+    } catch (err: any) {
+      setMe(null);
+      setMeError(err?.message ?? 'Erro ao carregar perfil');
+    } finally {
+      loadMeInProgressRef.current = false;
+      setMeLoading(false);
+    }
   }, [session?.access_token]);
 
+  useEffect(() => {
+    if (!session?.access_token) {
+      setMe(null);
+      setMeLoading(false);
+      return;
+    }
+    loadMe();
+  }, [session?.access_token, loadMe]);
+
   return (
-    <AuthContext.Provider value={{ user, session, loading, me, meLoading }}>
+    <AuthContext.Provider value={{ user, session, loading, me, meLoading, meError, loadMe }}>
       {children}
     </AuthContext.Provider>
   );

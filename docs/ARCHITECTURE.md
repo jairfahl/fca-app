@@ -27,12 +27,12 @@ fca-mtr/
 | Papel | Descrição | Rotas |
 |-------|-----------|-------|
 | **USER** | Fluxo normal: sua empresa, diagnósticos, ações, evidências. Botão "Solicitar ajuda". | `/full`, `/full/wizard`, `/full/dashboard`, etc. |
-| **CONSULTOR** | Acesso transversal: vê diagnósticos (LIGHT/FULL) em modo leitura, mensagens dos usuários, pedidos de ajuda. **Não preenche** diagnóstico. Pode registrar notas em ações FULL e responder mensagens. | `/consultor` (home), `/consultor/user/[id]`, `/consultor/light/[id]`, `/consultor/full/[id]`, `/full/consultor` |
+| **CONSULTOR** | Acesso transversal: vê diagnósticos (LIGHT/FULL) em modo leitura, mensagens dos usuários, pedidos de ajuda. **Não preenche** diagnóstico. Pode registrar notas em ações FULL e responder mensagens. | `/consultor` (home), `/consultor/company/[id]/overview`, `/consultor/user/[id]?company_id=`, `/consultor/light/[id]`, `/consultor/full/[id]` |
 | **ADMIN** | Mesmo que CONSULTOR + pode ativar modo teste. | Todas as rotas |
 
 - **Fonte da role**: `app_metadata.role` ou `user_metadata.role` no JWT. Fallback: `USER`.
 - **Backend**: `requireConsultorOrAdmin` em rotas `/consultor/*`. `blockConsultorOnMutation` bloqueia CONSULTOR em rotas de preenchimento (LIGHT/FULL). CONSULTOR é read-only em diagnósticos.
-- **Frontend**: `ConsultorGuard` em `/consultor/*` e `/full/consultor`. `ProtectedRoute` redireciona CONSULTOR/ADMIN para `/consultor` ao tentar acessar rotas de usuário.
+- **Frontend**: `RoleGate` em `ProtectedRoute`. CONSULTOR/ADMIN fora de `/consultor` → redirect para `/consultor?msg=acesso_consultor_painel`. USER em `/consultor` → redirect para `/diagnostico`.
 
 ## Princípios inegociáveis
 
@@ -95,7 +95,9 @@ As regras em `.cursor/rules/` são aplicadas automaticamente pelo Cursor:
 
 - `docs/FULL_MODULE_SCHEMA.md` — Schema do módulo FULL
 - `docs/FULL_QUESTION_BANK_API.md` — Contrato de catálogo e perguntas
+- `docs/QUESTIONS_CATALOG.md` — Tabelas de perguntas LIGHT (12), FULL (48), causa raiz (12)
 - `docs/FULL_ROOT_CAUSE_BASELINE.md` — Motor de causa e fluxo gap→causa→ação
+- `docs/CONSULTOR_NAV_AUDIT.md` — Rotas e navegação do módulo consultor
 - `docs/LIGHT_PLANS_API.md` — Contrato de planos Light
 - `catalogs/full/README.md` — Catálogo canônico FULL
 - `CHANGELOG.md` — Alterações notáveis

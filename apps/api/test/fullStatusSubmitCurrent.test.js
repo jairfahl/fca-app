@@ -276,6 +276,32 @@ describe('POST /full/assessments/:id/submit', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toBeDefined();
+    // score_numeric deve estar em escala 0–100
+    expect(Array.isArray(res.body.scores)).toBe(true);
+    expect(res.body.scores.length).toBeGreaterThan(0);
+    expect(res.body.scores.every((s) => s.score_numeric >= 0 && s.score_numeric <= 100)).toBe(true);
+  });
+
+  it('com respostas completas persiste snapshot (full_diagnostic_snapshot)', async () => {
+    global.__mockAnswers = mockData.answersFull;
+    const fullSnapshot = require('../src/lib/fullSnapshot');
+    const persistSpy = jest.spyOn(fullSnapshot, 'persistSnapshotOnSubmit').mockResolvedValue();
+
+    await request(app)
+      .post(`/full/assessments/${ASSESSMENT_ID}/submit?company_id=${COMPANY_ID}`)
+      .set('Authorization', 'Bearer test-token');
+
+    expect(persistSpy).toHaveBeenCalledWith(
+      ASSESSMENT_ID,
+      COMPANY_ID,
+      'C',
+      expect.any(Array),
+      expect.any(Array),
+      expect.any(Function)
+    );
+    expect(persistSpy.mock.calls[0][3].length).toBeGreaterThan(0);
+    expect(persistSpy.mock.calls[0][4].length).toBeGreaterThan(0);
+    persistSpy.mockRestore();
   });
 
   it('com catálogo incompleto (1 process_key faltando) retorna 200 e loga full_catalog_missing', async () => {

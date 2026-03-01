@@ -3,6 +3,7 @@ const router = express.Router();
 const { supabase } = require('../lib/supabase');
 const { requireAuth } = require('../middleware/requireAuth');
 const { requireFullEntitlement } = require('../middleware/requireFullEntitlement');
+const { blockConsultorOnMutation } = require('../middleware/guards');
 const { canAccessFull, isFullBypassUser } = require('../lib/canAccessFull');
 const { ensureConsultantOrOwnerAccess } = require('../lib/companyAccess');
 const { getOrCreateCurrentFullAssessment, FullCurrentError, logFullCurrentError } = require('../lib/fullAssessment');
@@ -273,7 +274,7 @@ router.post('/entitlements/manual-unlock', requireAuth, async (req, res) => {
  * Usa full_assessments (não assessments LIGHT). Cria DRAFT se não existir.
  * Query: ?company_id=<uuid>
  */
-router.get('/full/diagnostic', requireAuth, requireFullEntitlement, async (req, res) => {
+router.get('/full/diagnostic', requireAuth, blockConsultorOnMutation, requireFullEntitlement, async (req, res) => {
   try {
     const userId = req.user.id;
     const companyId = req.query.company_id;
@@ -282,7 +283,7 @@ router.get('/full/diagnostic', requireAuth, requireFullEntitlement, async (req, 
       return res.status(400).json({ error: 'company_id é obrigatório' });
     }
 
-    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email);
+    const company = await ensureConsultantOrOwnerAccess(userId, companyId, req.user?.email, req.user?.role);
     if (!company) {
       return res.status(404).json({ error: 'company não encontrada ou sem acesso' });
     }

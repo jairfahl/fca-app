@@ -4,6 +4,15 @@
 
 Catálogo fechado de processos e perguntas FULL. Endpoints determinísticos para listar catálogo, salvar respostas (DRAFT) e submeter (SUBMITTED). Resultados "Raio-X do dono" (3 vazamentos + 3 alavancas) e plano mínimo (3 ações).
 
+**Referência de perguntas:** Ver `docs/QUESTIONS_CATALOG.md` para tabelas completas (LIGHT 12, FULL 48, causa raiz 12).
+
+## Regras de coerência (Prompt 7)
+
+- **Recomendações:** Somente quando há match de catálogo (processo + banda + segmento) e sustentação por respostas (evidence_keys).
+- **Fallback:** Não exibir como recomendação "padrão". Registrar como gap de conteúdo; no máximo exibir "Conteúdo em definição pelo método" (modo consultor).
+- **is_gap_content:** Quando `true`, USER não vê o card; CONSULTOR vê com badge "Conteúdo em definição".
+- **evidence_keys:** Array de refs (ex: `["COMERCIAL_Q01", "OPERACOES_Q03"]`) que sustentam cada recomendação.
+
 ## Modelo de Dados
 
 - **full_process_catalog**: processos (COMERCIAL, OPERACOES, ADM_FIN, GESTAO)
@@ -135,6 +144,8 @@ Retorna resultados FULL (findings + six_pack).
         "primeiro_passo": "Criar rotina de prospecção (LOW)",
         "primeiro_passo_action_id": "act-com-1-low",
         "is_fallback": false,
+        "is_gap_content": false,
+        "evidence_keys": ["COMERCIAL_Q01", "COMERCIAL_Q03"],
         "supporting": { "como_puxou_nivel": "...", "questions": [...] }
       }
     ],
@@ -162,14 +173,14 @@ Retorna status do plano mínimo (3 ações).
 
 ### GET /full/actions?assessment_id=&company_id=
 
-Retorna sugestões de ações para o plano (baseadas nos findings e no motor de causa).
+Retorna sugestões de ações para o plano (baseadas nos findings e no motor de causa). **Somente recomendações com encaixe real** (match de catálogo + evidência nas respostas). Itens fallback/genéricos não são retornados.
 
 **Resposta:**
 ```json
 {
   "ok": true,
   "suggestions": [
-    { "process_key": "COMERCIAL", "band": "LOW", "action_key": "act-com-1-low", "title": "...", "benefit_text": "...", "metric_hint": "...", "why": [...] }
+    { "process_key": "COMERCIAL", "band": "LOW", "action_key": "act-com-1-low", "title": "...", "benefit_text": "...", "metric_hint": "...", "why": [...], "evidence_keys": ["COMERCIAL_Q01", "COMERCIAL_Q03"], "is_gap_content": false }
   ],
   "assessment_id": "...",
   "required_count": 3,

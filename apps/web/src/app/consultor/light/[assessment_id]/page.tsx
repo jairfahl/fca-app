@@ -5,6 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
+import { consultantHome } from '@/lib/consultorRoutes';
 import { useAuth } from '@/lib/auth';
 
 export default function ConsultorLightPage() {
@@ -35,7 +36,7 @@ function ConsultorLightContent() {
     apiFetch(`/consultor/light/${assessmentId}${qs}`, {}, session.access_token)
       .then(setData)
       .catch((err: any) => {
-        if (err instanceof ApiError && err.status === 403) router.replace('/consultor');
+        if (err instanceof ApiError && err.status === 403) router.replace(consultantHome());
         else setError(err.message || 'Erro ao carregar');
       })
       .finally(() => setLoading(false));
@@ -46,7 +47,7 @@ function ConsultorLightContent() {
     return (
       <div style={{ padding: '2rem' }}>
         {error && <div style={{ color: 'red', marginBottom: '1rem' }}>{error}</div>}
-        <Link href="/consultor" style={{ color: '#0070f3' }}>Voltar</Link>
+        <Link href={consultantHome()} style={{ color: '#0070f3' }}>Voltar</Link>
       </div>
     );
   }
@@ -62,7 +63,7 @@ function ConsultorLightContent() {
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
       <div style={{ marginBottom: '1.5rem' }}>
-        <Link href="/consultor" style={{ color: '#0070f3' }}>
+        <Link href={consultantHome()} style={{ color: '#0070f3' }}>
           ← Voltar
         </Link>
       </div>

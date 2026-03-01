@@ -7,6 +7,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '@/lib/api';
 import SolicitarAjudaButton from '@/components/SolicitarAjudaButton';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
 import CauseBlock from '@/components/CauseBlock';
 import {
   humanizeAnswerValue,
@@ -26,6 +27,7 @@ type Finding = {
   o_que_muda_em_30_dias: string;
   gap_label?: string | null;
   cause_primary?: string | null;
+  cause_label?: string | null;
   mechanism_label?: string | null;
   primeiro_passo?: { action_key: string; action_title?: string } | null;
   trace?: {
@@ -101,6 +103,7 @@ function FullResultadosContent() {
   const [payload, setPayload] = useState<ResultsPayload | null>(null);
   const [selected, setSelected] = useState<Finding | SixPackItem | null>(null);
   const [planStatus, setPlanStatus] = useState<{ exists: boolean; progress: string } | null>(null);
+  const [assessmentVersion, setAssessmentVersion] = useState<number | null>(null);
   const userRole = me?.role ?? 'USER';
 
   useEffect(() => {
@@ -123,6 +126,12 @@ function FullResultadosContent() {
           setPlanStatus(statusRes ? { exists: !!statusRes.exists, progress: statusRes.progress || '0/3' } : null);
         } catch {
           setPlanStatus(null);
+        }
+        try {
+          const asmData = await apiFetch(`/full/assessments/${assessmentId}?company_id=${companyId}`, {}, session.access_token);
+          setAssessmentVersion(asmData?.assessment_version ?? null);
+        } catch {
+          // version display is optional — ignore fetch failure
         }
         setState('ready');
         if (causePendingFromUrl && companyId && assessmentId && session?.access_token) {
@@ -169,9 +178,16 @@ function FullResultadosContent() {
     <div style={{ padding: '2rem', maxWidth: '980px', margin: '0 auto' }}>
       <div style={{ marginBottom: '1rem', color: '#666', fontSize: '0.9rem' }}>Logado como: {user?.email}</div>
       <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.5rem' }}>
-        <h1 style={{ margin: 0 }}>Resultados FULL</h1>
+        <h1 style={{ margin: 0 }}>
+          {assessmentVersion != null ? `Diagnóstico #${assessmentVersion}` : 'Resultados FULL'}
+        </h1>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          {companyId && <SolicitarAjudaButton companyId={companyId} />}
+          {companyId && (
+            <>
+              <PedirAjudaConsultor companyId={companyId} />
+              <SolicitarAjudaButton companyId={companyId} />
+            </>
+          )}
           <Link
             href={state === 'error' && companyId ? `/full?company_id=${companyId}` : (companyId ? `/full/wizard?company_id=${companyId}&assessment_id=${assessmentId || ''}` : '/full')}
             style={{ background: '#6c757d', color: '#fff', padding: '0.5rem 1rem', borderRadius: '6px', textDecoration: 'none' }}

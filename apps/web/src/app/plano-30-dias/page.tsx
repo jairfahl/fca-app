@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch, ApiError } from '@/lib/api';
+import PedirAjudaConsultor from '@/components/PedirAjudaConsultor';
 
 interface LightActionPlan {
   id: string;
@@ -99,9 +100,11 @@ function Plano30DiasContent() {
 
   return (
     <div style={{ padding: '2rem', maxWidth: '800px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
         <h1 style={{ margin: 0 }}>Plano de 30 dias</h1>
-        <Link
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          {companyId && <PedirAjudaConsultor companyId={companyId} />}
+          <Link
           href={`/recommendations?assessment_id=${assessmentId}&company_id=${companyId}`}
           style={{
             display: 'inline-block',
@@ -116,6 +119,7 @@ function Plano30DiasContent() {
         >
           Voltar para Recomendações
         </Link>
+        </div>
       </div>
 
       {error && (

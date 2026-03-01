@@ -7,10 +7,11 @@ Conteúdo versionado para o módulo FULL do diagnóstico aprofundado.
 | Arquivo | Descrição |
 |---------|-----------|
 | `processes.json` | Estrutura Área → Processo com microvalor: protects, owner_alert, typical_impact |
-| `questions.json` | Perguntas por processo (mais profundas que LIGHT), com dimension e segment_applicability |
+| `questions.json` | Perguntas por processo (12 por processo, 48 total), com dimension e segment_applicability |
 | `recommendations.json` | Recomendações por banda (LOW/MEDIUM/HIGH) e processo |
 | `actions.json` | Ações por banda e processo, com benefit_text, metric_hint, dod_checklist |
 | `catalog.v1.json` | Catálogo v1 (processo + nivel + sinais): recomendação + ação por item |
+| `cause_engine.v1.json` | Motor de causa raiz: gaps, perguntas LIKERT_5 por gap, regras SCORE_WEIGHTS, tie-breaker |
 
 ## Catálogo v1 (catalog.v1.json)
 
