@@ -4,6 +4,48 @@ Alterações notáveis do projeto FCA-MTR.
 
 ---
 
+## [Unreleased] — Refatoração pós-P11 (Sprint 0–5) — 2026-03-03
+
+### Sprint 0 — Limpeza
+- Removidos 8 `.md` obsoletos da raiz (fixes já em produção, docs históricos)
+- Removidos 4 docs QA duplicados de `docs/`
+- Removidos 2 PDFs redundantes de `docs/` (Fase6_1, Blueprint v1.3)
+- Removidos 3 `.md` manuais de `scripts/` (substituídos por Jest)
+- Removidas 3 páginas frontend redirect-only (`consultor/[company_id]/*`)
+- `.gitignore` atualizado: `.claude/`, `tmp_*.js`, `logs/`
+
+### Sprint 1 — Decomposição de monolitos backend
+- `routes/full.js` (5.006 linhas) → 11 módulos em `routes/full/` + `routes/full/index.js`
+- `routes/f3.js` (1.395 linhas) → 4 módulos em `routes/f3/` + `routes/f3/index.js`
+- `routes/consultor.js` (1.148 linhas) → 5 módulos em `routes/consultor/` + `routes/consultor/index.js`
+- Novos helpers: `lib/fullHelpers.js`, `lib/fullSuggestions.js`, `lib/fullFindings.js`
+- Novo repositório: `lib/repositories/fullAssessmentRepo.js`
+
+### Sprint 2 — Qualidade backend
+- Logging estruturado: `lib/logger.js` (pino + pino-pretty)
+- Error factory: `lib/httpErrors.js` (13 códigos tipados)
+- Config centralizado: `lib/fullConfig.js` (remove hardcodes de email)
+- Response wrapper: `lib/respond.js`
+- Validação Zod: `lib/validators/index.js` (answerSchema, evidenceSchema, planSelectSchema)
+- `lib/canAccessFull.js` refatorado: usa `fullConfig.js`
+
+### Sprint 3 — Rotas frontend determinísticas
+- `lib/fullRoutes.ts`: construtores de URL do módulo FULL (espelha `consultorRoutes.ts`)
+- `lib/apiRoutes.ts`: construtores de URL para chamadas à API (30+ endpoints)
+- `lib/fullRoutes.test.ts`: 37 testes vitest (todas as funções + guards de input inválido)
+
+### Sprint 4 — Componentes e qualidade frontend
+- `lib/scoring.ts`: helpers de score compartilhados (scoreToBand, bandLabel, bandColor, etc.)
+- `types/api.ts`: 25+ interfaces TypeScript para respostas da API
+- Tailwind CSS v4: `tailwind.config.ts`, `postcss.config.js`, `globals.css` em `layout.tsx`
+- Componentes UI: `BandBadge`, `ScoreBar`, `LoadingSpinner`, `ErrorMessage`
+
+### Sprint 5 — Limpeza final
+- Removidos 5 docs QA/evidência obsoletos de `docs/`
+- `CHANGELOG.md` atualizado
+
+---
+
 ## [Unreleased]
 
 ### Documentação (2025-02-19)
