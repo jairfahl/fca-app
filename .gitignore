@@ -15,8 +15,14 @@ dist/
 # Generated reports (PDF)
 data/reports/
 
+# Claude Code internals
+.claude/
+
 # QA / runtime logs
 logs/
+
+# Temporary dev helpers
+tmp_*.js
 
 # Production
 *.log
