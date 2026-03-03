@@ -11,4 +11,6 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // Desabilita processamento de CSS nos testes unitários (não é necessário)
+  css: false,
 });
