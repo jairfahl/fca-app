@@ -1,26 +1,24 @@
 /**
  * Utilitário central de autorização FULL.
  * Regras (em ordem):
- * 0. FULL_BYPASS_TEST_EMAIL (fca@fca.com) → true [bypass temporário para testes]
+ * 0. FULL_BYPASS_TEST_EMAIL (env ou fca@fca.com) → true [bypass temporário]
  * 1. FULL_TEST_MODE=true → true
  * 2. userEmail ∈ FULL_ADMIN_WHITELIST → true
- * 3. entitlement FULL/ACTIVE para (userId, companyId) → true
- * 4. Caso contrário → false
+ * 3. userEmail === FULL_ADMIN_EMAIL → true
+ * 4. entitlement FULL/ACTIVE para (userId, companyId) → true
+ * 5. Caso contrário → false
  *
  * @param {Object} opts
- * @param {string} opts.userEmail - Email do usuário (ex: admin@fca.com)
+ * @param {string} opts.userEmail - Email do usuário
  * @param {string} opts.userId - UUID do usuário
  * @param {string} opts.companyId - UUID da company
  * @param {Object} opts.supabase - Cliente Supabase
  * @returns {Promise<boolean>}
  */
-const ADMIN_EMAIL = 'admin@fca.com';
-
-/** Bypass temporário para testes — remover quando regras de pagamento estiverem prontas */
-const FULL_BYPASS_TEST_EMAIL = 'fca@fca.com';
+const { TEST_MODE, BYPASS_TEST_EMAIL, ADMIN_EMAIL, ADMIN_WHITELIST } = require('./fullConfig');
 
 function isFullBypassUser(email) {
-  return !!email && String(email).trim().toLowerCase() === FULL_BYPASS_TEST_EMAIL.toLowerCase();
+  return !!email && String(email).trim().toLowerCase() === BYPASS_TEST_EMAIL;
 }
 
 async function resolveEmail(userEmail, userId, supabaseClient) {
@@ -34,28 +32,21 @@ async function resolveEmail(userEmail, userId, supabaseClient) {
 async function canAccessFull({ userEmail, userId, companyId, supabase }) {
   const email = await resolveEmail(userEmail, userId, supabase);
 
-  // 0. Bypass teste (fca@fca.com) — temporário, fácil de remover
+  // 0. Bypass teste — controlado por FULL_BYPASS_TEST_EMAIL env var
   if (isFullBypassUser(email)) {
-    console.log('[BYPASS] FULL enabled for test user fca@fca.com');
     return true;
   }
 
-  // 1. ADMIN OVERRIDE (não negociável - sempre FULL total)
-  if (email === ADMIN_EMAIL.toLowerCase()) {
+  // 1. FULL_TEST_MODE
+  if (TEST_MODE) return true;
+
+  // 2. Admin email — acesso total
+  if (email === ADMIN_EMAIL) {
     return true;
   }
-
-  // 2. FULL_TEST_MODE
-  const testMode = process.env.FULL_TEST_MODE === 'true' || process.env.FULL_TEST_MODE === '1';
-  if (testMode) return true;
 
   // 3. Whitelist
-  const whitelistRaw = process.env.FULL_ADMIN_WHITELIST || '';
-  const whitelist = whitelistRaw
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter((e) => e.length > 0);
-  if (email && whitelist.includes(email)) {
+  if (email && ADMIN_WHITELIST.includes(email)) {
     return true;
   }
 
@@ -77,25 +68,13 @@ async function canAccessFull({ userEmail, userId, companyId, supabase }) {
 /**
  * Verifica se o usuário pode ativar FULL em modo teste (whitelist ou FULL_TEST_MODE).
  * Usado para POST /entitlements/full/activate_test.
- *
- * @param {string} userEmail - Email do usuário
- * @returns {boolean}
  */
 function canActivateFullTest(userEmail) {
-  // Bypass temporário para testes — remover quando regras de pagamento estiverem prontas
   if (isFullBypassUser(userEmail)) return true;
-  if (userEmail && userEmail.trim().toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-    return true;
-  }
-  const testMode = process.env.FULL_TEST_MODE === 'true' || process.env.FULL_TEST_MODE === '1';
-  if (testMode) return true;
-
-  const whitelistRaw = process.env.FULL_ADMIN_WHITELIST || '';
-  const whitelist = whitelistRaw
-    .split(',')
-    .map((e) => e.trim().toLowerCase())
-    .filter((e) => e.length > 0);
-  return userEmail && whitelist.includes(String(userEmail).trim().toLowerCase());
+  const email = userEmail ? String(userEmail).trim().toLowerCase() : null;
+  if (email === ADMIN_EMAIL) return true;
+  if (TEST_MODE) return true;
+  return email ? ADMIN_WHITELIST.includes(email) : false;
 }
 
 module.exports = { canAccessFull, canActivateFullTest, isFullBypassUser };
